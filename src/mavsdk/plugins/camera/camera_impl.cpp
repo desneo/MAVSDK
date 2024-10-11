@@ -3,12 +3,15 @@
 #include "system.h"
 #include "mavsdk_math.h"
 #include "http_loader.h"
-#include "camera_definition_files.h"
 #include "unused.h"
 #include "callback_list.tpp"
+#include "fs_utils.h"
 
-#include <functional>
+#include <algorithm>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <functional>
 #include <sstream>
 
 namespace mavsdk {
@@ -37,60 +40,53 @@ CameraImpl::~CameraImpl()
 
 void CameraImpl::init()
 {
-    _system_impl->register_mavlink_message_handler(
+    _system_impl->register_mavlink_message_handler_with_compid(
         MAVLINK_MSG_ID_CAMERA_CAPTURE_STATUS,
         _camera_id + MAV_COMP_ID_CAMERA,
         [this](const mavlink_message_t& message) { process_camera_capture_status(message); },
         this);
 
-    _system_impl->register_mavlink_message_handler(
+    _system_impl->register_mavlink_message_handler_with_compid(
         MAVLINK_MSG_ID_STORAGE_INFORMATION,
         _camera_id + MAV_COMP_ID_CAMERA,
         [this](const mavlink_message_t& message) { process_storage_information(message); },
         this);
 
-    _system_impl->register_mavlink_message_handler(
+    _system_impl->register_mavlink_message_handler_with_compid(
         MAVLINK_MSG_ID_CAMERA_IMAGE_CAPTURED,
         _camera_id + MAV_COMP_ID_CAMERA,
         [this](const mavlink_message_t& message) { process_camera_image_captured(message); },
         this);
 
-    _system_impl->register_mavlink_message_handler(
+    _system_impl->register_mavlink_message_handler_with_compid(
         MAVLINK_MSG_ID_CAMERA_SETTINGS,
         _camera_id + MAV_COMP_ID_CAMERA,
         [this](const mavlink_message_t& message) { process_camera_settings(message); },
         this);
 
-    _system_impl->register_mavlink_message_handler(
+    _system_impl->register_mavlink_message_handler_with_compid(
         MAVLINK_MSG_ID_CAMERA_INFORMATION,
         _camera_id + MAV_COMP_ID_CAMERA,
         [this](const mavlink_message_t& message) { process_camera_information(message); },
         this);
 
-    _system_impl->register_mavlink_message_handler(
+    _system_impl->register_mavlink_message_handler_with_compid(
         MAVLINK_MSG_ID_VIDEO_STREAM_INFORMATION,
         _camera_id + MAV_COMP_ID_CAMERA,
         [this](const mavlink_message_t& message) { process_video_information(message); },
         this);
 
-    _system_impl->register_mavlink_message_handler(
+    _system_impl->register_mavlink_message_handler_with_compid(
         MAVLINK_MSG_ID_VIDEO_STREAM_STATUS,
         _camera_id + MAV_COMP_ID_CAMERA,
         [this](const mavlink_message_t& message) { process_video_stream_status(message); },
         this);
 
-    if (_system_impl->has_autopilot()) {
-        _system_impl->register_mavlink_message_handler(
-            MAVLINK_MSG_ID_FLIGHT_INFORMATION,
-            [this](const mavlink_message_t& message) { process_flight_information(message); },
-            this);
-    }
+    _check_connection_status_call_every_cookie =
+        _system_impl->add_call_every([this]() { check_connection_status(); }, 0.5);
 
-    _system_impl->add_call_every(
-        [this]() { check_connection_status(); }, 0.5, &_check_connection_status_call_every_cookie);
-
-    _system_impl->add_call_every(
-        [this]() { request_missing_capture_info(); }, 0.5, &_request_missing_capture_info_cookie);
+    _request_missing_capture_info_cookie =
+        _system_impl->add_call_every([this]() { request_missing_capture_info(); }, 0.5);
 }
 
 void CameraImpl::deinit()
@@ -99,7 +95,6 @@ void CameraImpl::deinit()
     _system_impl->remove_call_every(_check_connection_status_call_every_cookie);
     _system_impl->remove_call_every(_status.call_every_cookie);
     _system_impl->remove_call_every(_camera_information_call_every_cookie);
-    _system_impl->remove_call_every(_flight_information_call_every_cookie);
     _system_impl->remove_call_every(_mode.call_every_cookie);
     _system_impl->remove_call_every(_video_stream_info.call_every_cookie);
     _system_impl->unregister_all_mavlink_message_handlers(this);
@@ -163,12 +158,8 @@ void CameraImpl::prepare_async(const Camera::ResultCallback& callback)
         _system_impl->call_user_callback(
             [temp_callback]() { temp_callback(Camera::Result::Success); });
     } else {
-        _camera_definition_callback = [this, temp_callback](bool has_succeeded) {
-            if (has_succeeded) {
-                temp_callback(Camera::Result::Success);
-            } else {
-                temp_callback(Camera::Result::Error);
-            }
+        _camera_definition_callback = [this, temp_callback](Camera::Result result) {
+            temp_callback(result);
             _camera_definition_callback = nullptr;
         };
 
@@ -207,20 +198,10 @@ void CameraImpl::manual_enable()
     request_status();
     request_camera_information();
 
-    _system_impl->add_call_every(
-        [this]() { request_camera_information(); }, 10.0, &_camera_information_call_every_cookie);
+    _camera_information_call_every_cookie =
+        _system_impl->add_call_every([this]() { request_camera_information(); }, 10.0);
 
-    _system_impl->add_call_every([this]() { request_status(); }, 5.0, &_status.call_every_cookie);
-
-    // for backwards compatibility with Yuneec drones
-    if (_system_impl->has_autopilot()) {
-        request_flight_information();
-
-        _system_impl->add_call_every(
-            [this]() { request_flight_information(); },
-            10.0,
-            &_flight_information_call_every_cookie);
-    }
+    _status.call_every_cookie = _system_impl->add_call_every([this]() { request_status(); }, 5.0);
 }
 
 void CameraImpl::disable()
@@ -236,34 +217,31 @@ void CameraImpl::manual_disable()
     _system_impl->remove_call_every(_camera_information_call_every_cookie);
     _system_impl->remove_call_every(_status.call_every_cookie);
 
-    if (_flight_information_call_every_cookie) {
-        _system_impl->remove_call_every(_flight_information_call_every_cookie);
-    }
-
     _camera_found = false;
 }
 
 void CameraImpl::update_component()
 {
     uint8_t cmp_id = _camera_id + MAV_COMP_ID_CAMERA;
-    _system_impl->update_componentid_messages_handler(
+    _system_impl->update_component_id_messages_handler(
         MAVLINK_MSG_ID_CAMERA_CAPTURE_STATUS, cmp_id, this);
 
-    _system_impl->update_componentid_messages_handler(
+    _system_impl->update_component_id_messages_handler(
         MAVLINK_MSG_ID_STORAGE_INFORMATION, cmp_id, this);
 
-    _system_impl->update_componentid_messages_handler(
+    _system_impl->update_component_id_messages_handler(
         MAVLINK_MSG_ID_CAMERA_IMAGE_CAPTURED, cmp_id, this);
 
-    _system_impl->update_componentid_messages_handler(MAVLINK_MSG_ID_CAMERA_SETTINGS, cmp_id, this);
+    _system_impl->update_component_id_messages_handler(
+        MAVLINK_MSG_ID_CAMERA_SETTINGS, cmp_id, this);
 
-    _system_impl->update_componentid_messages_handler(
+    _system_impl->update_component_id_messages_handler(
         MAVLINK_MSG_ID_CAMERA_INFORMATION, cmp_id, this);
 
-    _system_impl->update_componentid_messages_handler(
+    _system_impl->update_component_id_messages_handler(
         MAVLINK_MSG_ID_VIDEO_STREAM_INFORMATION, cmp_id, this);
 
-    _system_impl->update_componentid_messages_handler(
+    _system_impl->update_component_id_messages_handler(
         MAVLINK_MSG_ID_VIDEO_STREAM_STATUS, cmp_id, this);
 }
 
@@ -287,28 +265,6 @@ Camera::Result CameraImpl::select_camera(const size_t id)
     return Camera::Result::Success;
 }
 
-MavlinkCommandSender::CommandLong CameraImpl::make_command_request_flight_information()
-{
-    MavlinkCommandSender::CommandLong command_flight_information{};
-
-    command_flight_information.command = MAV_CMD_REQUEST_FLIGHT_INFORMATION;
-    command_flight_information.params.maybe_param1 = 1.0f; // Request it
-    command_flight_information.target_component_id = MAV_COMP_ID_AUTOPILOT1;
-
-    return command_flight_information;
-}
-
-MavlinkCommandSender::CommandLong CameraImpl::make_command_request_camera_info()
-{
-    MavlinkCommandSender::CommandLong command_camera_info{};
-
-    command_camera_info.command = MAV_CMD_REQUEST_CAMERA_INFORMATION;
-    command_camera_info.params.maybe_param1 = 1.0f; // Request it
-    command_camera_info.target_component_id = _camera_id + MAV_COMP_ID_CAMERA;
-
-    return command_camera_info;
-}
-
 MavlinkCommandSender::CommandLong
 CameraImpl::make_command_take_photo(float interval_s, float no_of_photos)
 {
@@ -322,6 +278,131 @@ CameraImpl::make_command_take_photo(float interval_s, float no_of_photos)
     cmd_take_photo.target_component_id = _camera_id + MAV_COMP_ID_CAMERA;
 
     return cmd_take_photo;
+}
+
+MavlinkCommandSender::CommandLong CameraImpl::make_command_zoom_out()
+{
+    MavlinkCommandSender::CommandLong cmd{};
+    cmd.command = MAV_CMD_SET_CAMERA_ZOOM;
+    cmd.params.maybe_param1 = (float)ZOOM_TYPE_CONTINUOUS;
+    cmd.params.maybe_param2 = -1.f;
+    cmd.target_component_id = _camera_id + MAV_COMP_ID_CAMERA;
+
+    return cmd;
+}
+
+MavlinkCommandSender::CommandLong CameraImpl::make_command_zoom_in()
+{
+    MavlinkCommandSender::CommandLong cmd{};
+    cmd.command = MAV_CMD_SET_CAMERA_ZOOM;
+    cmd.params.maybe_param1 = (float)ZOOM_TYPE_CONTINUOUS;
+    cmd.params.maybe_param2 = 1.f;
+    cmd.target_component_id = _camera_id + MAV_COMP_ID_CAMERA;
+
+    return cmd;
+}
+
+MavlinkCommandSender::CommandLong CameraImpl::make_command_zoom_stop()
+{
+    MavlinkCommandSender::CommandLong cmd{};
+    cmd.command = MAV_CMD_SET_CAMERA_ZOOM;
+    cmd.params.maybe_param1 = (float)ZOOM_TYPE_CONTINUOUS;
+    cmd.params.maybe_param2 = 0.f;
+    cmd.target_component_id = _camera_id + MAV_COMP_ID_CAMERA;
+
+    return cmd;
+}
+
+MavlinkCommandSender::CommandLong CameraImpl::make_command_zoom_range(float range)
+{
+    // Clip to safe range.
+    range = std::max(0.f, std::min(range, 100.f));
+
+    MavlinkCommandSender::CommandLong cmd{};
+    cmd.command = MAV_CMD_SET_CAMERA_ZOOM;
+    cmd.params.maybe_param1 = (float)ZOOM_TYPE_RANGE;
+    cmd.params.maybe_param2 = range;
+    cmd.target_component_id = _camera_id + MAV_COMP_ID_CAMERA;
+
+    return cmd;
+}
+
+MavlinkCommandSender::CommandLong
+CameraImpl::make_command_track_point(float point_x, float point_y, float radius)
+{
+    MavlinkCommandSender::CommandLong cmd{};
+    cmd.command = MAV_CMD_CAMERA_TRACK_POINT;
+    cmd.params.maybe_param1 = (float)point_x;
+    cmd.params.maybe_param2 = (float)point_y;
+    cmd.params.maybe_param3 = (float)radius;
+    cmd.target_component_id = _camera_id + MAV_COMP_ID_CAMERA;
+
+    return cmd;
+}
+
+MavlinkCommandSender::CommandLong CameraImpl::make_command_track_rectangle(
+    float top_left_x, float top_left_y, float bottom_right_x, float bottom_right_y)
+{
+    MavlinkCommandSender::CommandLong cmd{};
+    cmd.command = MAV_CMD_CAMERA_TRACK_RECTANGLE;
+    cmd.params.maybe_param1 = top_left_x;
+    cmd.params.maybe_param2 = top_left_y;
+    cmd.params.maybe_param3 = bottom_right_x;
+    cmd.params.maybe_param4 = bottom_right_y;
+    cmd.target_component_id = _camera_id + MAV_COMP_ID_CAMERA;
+
+    return cmd;
+}
+MavlinkCommandSender::CommandLong CameraImpl::make_command_track_stop()
+{
+    MavlinkCommandSender::CommandLong cmd{};
+    cmd.command = MAV_CMD_CAMERA_STOP_TRACKING;
+    cmd.target_component_id = _camera_id + MAV_COMP_ID_CAMERA;
+
+    return cmd;
+}
+MavlinkCommandSender::CommandLong CameraImpl::make_command_focus_in()
+{
+    MavlinkCommandSender::CommandLong cmd{};
+    cmd.command = MAV_CMD_SET_CAMERA_FOCUS;
+    cmd.params.maybe_param1 = (float)FOCUS_TYPE_CONTINUOUS;
+    cmd.params.maybe_param2 = -1.f;
+    cmd.target_component_id = _camera_id + MAV_COMP_ID_CAMERA;
+
+    return cmd;
+}
+MavlinkCommandSender::CommandLong CameraImpl::make_command_focus_out()
+{
+    MavlinkCommandSender::CommandLong cmd{};
+    cmd.command = MAV_CMD_SET_CAMERA_FOCUS;
+    cmd.params.maybe_param1 = (float)FOCUS_TYPE_CONTINUOUS;
+    cmd.params.maybe_param2 = 1.f;
+    cmd.target_component_id = _camera_id + MAV_COMP_ID_CAMERA;
+
+    return cmd;
+}
+MavlinkCommandSender::CommandLong CameraImpl::make_command_focus_stop()
+{
+    MavlinkCommandSender::CommandLong cmd{};
+    cmd.command = MAV_CMD_SET_CAMERA_FOCUS;
+    cmd.params.maybe_param1 = (float)FOCUS_TYPE_CONTINUOUS;
+    cmd.params.maybe_param2 = 0.f;
+    cmd.target_component_id = _camera_id + MAV_COMP_ID_CAMERA;
+
+    return cmd;
+}
+MavlinkCommandSender::CommandLong CameraImpl::make_command_focus_range(float range)
+{
+    // Clip to safe range.
+    range = std::max(0.f, std::min(range, 100.f));
+
+    MavlinkCommandSender::CommandLong cmd{};
+    cmd.command = MAV_CMD_SET_CAMERA_FOCUS;
+    cmd.params.maybe_param1 = (float)FOCUS_TYPE_RANGE;
+    cmd.params.maybe_param2 = range;
+    cmd.target_component_id = _camera_id + MAV_COMP_ID_CAMERA;
+
+    return cmd;
 }
 
 MavlinkCommandSender::CommandLong CameraImpl::make_command_stop_photo()
@@ -369,94 +450,26 @@ MavlinkCommandSender::CommandLong CameraImpl::make_command_set_camera_mode(float
     return cmd_set_camera_mode;
 }
 
-MavlinkCommandSender::CommandLong CameraImpl::make_command_request_camera_settings()
-{
-    MavlinkCommandSender::CommandLong cmd_req_camera_settings{};
-
-    cmd_req_camera_settings.command = MAV_CMD_REQUEST_CAMERA_SETTINGS;
-    cmd_req_camera_settings.params.maybe_param1 = 1.f; // Request it
-    cmd_req_camera_settings.target_component_id = _camera_id + MAV_COMP_ID_CAMERA;
-
-    return cmd_req_camera_settings;
-}
-
-MavlinkCommandSender::CommandLong CameraImpl::make_command_request_camera_capture_status()
-{
-    MavlinkCommandSender::CommandLong cmd_req_camera_cap_stat{};
-
-    cmd_req_camera_cap_stat.command = MAV_CMD_REQUEST_CAMERA_CAPTURE_STATUS;
-    cmd_req_camera_cap_stat.params.maybe_param1 = 1.0f; // Request it
-    cmd_req_camera_cap_stat.target_component_id = _camera_id + MAV_COMP_ID_CAMERA;
-
-    return cmd_req_camera_cap_stat;
-}
-
-MavlinkCommandSender::CommandLong
-CameraImpl::make_command_request_camera_image_captured(const size_t photo_id)
-{
-    MavlinkCommandSender::CommandLong cmd_req_camera_image_captured{};
-
-    cmd_req_camera_image_captured.command = MAV_CMD_REQUEST_MESSAGE;
-    cmd_req_camera_image_captured.params.maybe_param1 =
-        static_cast<float>(MAVLINK_MSG_ID_CAMERA_IMAGE_CAPTURED);
-    cmd_req_camera_image_captured.params.maybe_param2 = static_cast<float>(photo_id);
-    cmd_req_camera_image_captured.target_component_id = _camera_id + MAV_COMP_ID_CAMERA;
-
-    return cmd_req_camera_image_captured;
-}
-
-MavlinkCommandSender::CommandLong CameraImpl::make_command_request_storage_info()
-{
-    MavlinkCommandSender::CommandLong cmd_req_storage_info{};
-
-    cmd_req_storage_info.command = MAV_CMD_REQUEST_STORAGE_INFORMATION;
-    cmd_req_storage_info.params.maybe_param1 = 0.f; // Reserved, set to 0
-    cmd_req_storage_info.params.maybe_param2 = 1.f; // Request it
-    cmd_req_storage_info.target_component_id = _camera_id + MAV_COMP_ID_CAMERA;
-
-    return cmd_req_storage_info;
-}
-
-MavlinkCommandSender::CommandLong CameraImpl::make_command_start_video_streaming()
+MavlinkCommandSender::CommandLong CameraImpl::make_command_start_video_streaming(int32_t stream_id)
 {
     MavlinkCommandSender::CommandLong cmd_start_video_streaming{};
 
     cmd_start_video_streaming.command = MAV_CMD_VIDEO_START_STREAMING;
+    cmd_start_video_streaming.params.maybe_param1 = static_cast<float>(stream_id);
     cmd_start_video_streaming.target_component_id = _camera_id + MAV_COMP_ID_CAMERA;
 
     return cmd_start_video_streaming;
 }
 
-MavlinkCommandSender::CommandLong CameraImpl::make_command_stop_video_streaming()
+MavlinkCommandSender::CommandLong CameraImpl::make_command_stop_video_streaming(int32_t stream_id)
 {
     MavlinkCommandSender::CommandLong cmd_stop_video_streaming{};
 
     cmd_stop_video_streaming.command = MAV_CMD_VIDEO_STOP_STREAMING;
+    cmd_stop_video_streaming.params.maybe_param1 = static_cast<float>(stream_id);
     cmd_stop_video_streaming.target_component_id = _camera_id + MAV_COMP_ID_CAMERA;
 
     return cmd_stop_video_streaming;
-}
-
-MavlinkCommandSender::CommandLong CameraImpl::make_command_request_video_stream_info()
-{
-    MavlinkCommandSender::CommandLong cmd_req_video_stream_info{};
-
-    cmd_req_video_stream_info.command = MAV_CMD_REQUEST_VIDEO_STREAM_INFORMATION;
-    cmd_req_video_stream_info.params.maybe_param2 = 1.0f;
-    cmd_req_video_stream_info.target_component_id = _camera_id + MAV_COMP_ID_CAMERA;
-
-    return cmd_req_video_stream_info;
-}
-
-MavlinkCommandSender::CommandLong CameraImpl::make_command_request_video_stream_status()
-{
-    MavlinkCommandSender::CommandLong cmd_req_video_stream_status{};
-
-    cmd_req_video_stream_status.command = MAV_CMD_REQUEST_VIDEO_STREAM_STATUS;
-    cmd_req_video_stream_status.params.maybe_param2 = 1.0f;
-    cmd_req_video_stream_status.target_component_id = _camera_id + MAV_COMP_ID_CAMERA;
-
-    return cmd_req_video_stream_status;
 }
 
 Camera::Result CameraImpl::take_photo()
@@ -469,6 +482,106 @@ Camera::Result CameraImpl::take_photo()
     auto cmd_take_photo = make_command_take_photo(0.f, 1.0f);
 
     return camera_result_from_command_result(_system_impl->send_command(cmd_take_photo));
+}
+
+Camera::Result CameraImpl::zoom_out_start()
+{
+    std::lock_guard<std::mutex> lock(_capture.mutex);
+
+    auto cmd = make_command_zoom_out();
+
+    return camera_result_from_command_result(_system_impl->send_command(cmd));
+}
+
+Camera::Result CameraImpl::zoom_in_start()
+{
+    std::lock_guard<std::mutex> lock(_capture.mutex);
+
+    auto cmd = make_command_zoom_in();
+
+    return camera_result_from_command_result(_system_impl->send_command(cmd));
+}
+
+Camera::Result CameraImpl::zoom_stop()
+{
+    std::lock_guard<std::mutex> lock(_capture.mutex);
+
+    auto cmd = make_command_zoom_stop();
+
+    return camera_result_from_command_result(_system_impl->send_command(cmd));
+}
+
+Camera::Result CameraImpl::zoom_range(float range)
+{
+    std::lock_guard<std::mutex> lock(_capture.mutex);
+
+    auto cmd = make_command_zoom_range(range);
+
+    return camera_result_from_command_result(_system_impl->send_command(cmd));
+}
+
+Camera::Result CameraImpl::track_point(float point_x, float point_y, float radius)
+{
+    std::lock_guard<std::mutex> lock(_capture.mutex);
+
+    auto cmd = make_command_track_point(point_x, point_y, radius);
+
+    return camera_result_from_command_result(_system_impl->send_command(cmd));
+}
+
+Camera::Result CameraImpl::track_rectangle(
+    float top_left_x, float top_left_y, float bottom_right_x, float bottom_right_y)
+{
+    std::lock_guard<std::mutex> lock(_capture.mutex);
+
+    auto cmd = make_command_track_rectangle(top_left_x, top_left_y, bottom_right_x, bottom_right_y);
+
+    return camera_result_from_command_result(_system_impl->send_command(cmd));
+}
+
+Camera::Result CameraImpl::track_stop()
+{
+    std::lock_guard<std::mutex> lock(_capture.mutex);
+
+    auto cmd = make_command_track_stop();
+
+    return camera_result_from_command_result(_system_impl->send_command(cmd));
+}
+
+Camera::Result CameraImpl::focus_in_start()
+{
+    std::lock_guard<std::mutex> lock(_capture.mutex);
+
+    auto cmd = make_command_focus_in();
+
+    return camera_result_from_command_result(_system_impl->send_command(cmd));
+}
+
+Camera::Result CameraImpl::focus_out_start()
+{
+    std::lock_guard<std::mutex> lock(_capture.mutex);
+
+    auto cmd = make_command_focus_out();
+
+    return camera_result_from_command_result(_system_impl->send_command(cmd));
+}
+
+Camera::Result CameraImpl::focus_stop()
+{
+    std::lock_guard<std::mutex> lock(_capture.mutex);
+
+    auto cmd = make_command_focus_stop();
+
+    return camera_result_from_command_result(_system_impl->send_command(cmd));
+}
+
+Camera::Result CameraImpl::focus_range(float range)
+{
+    std::lock_guard<std::mutex> lock(_capture.mutex);
+
+    auto cmd = make_command_focus_range(range);
+
+    return camera_result_from_command_result(_system_impl->send_command(cmd));
 }
 
 Camera::Result CameraImpl::start_photo_interval(float interval_s)
@@ -514,6 +627,144 @@ Camera::Result CameraImpl::stop_video()
     }
 
     return camera_result_from_command_result(_system_impl->send_command(cmd_stop_video));
+}
+
+void CameraImpl::zoom_in_start_async(const Camera::ResultCallback& callback)
+{
+    std::lock_guard<std::mutex> lock(_capture.mutex);
+
+    auto cmd = make_command_zoom_in();
+
+    _system_impl->send_command_async(
+        cmd, [this, callback](MavlinkCommandSender::Result result, float) {
+            receive_command_result(result, callback);
+        });
+}
+
+void CameraImpl::zoom_out_start_async(const Camera::ResultCallback& callback)
+{
+    std::lock_guard<std::mutex> lock(_capture.mutex);
+
+    auto cmd = make_command_zoom_out();
+
+    _system_impl->send_command_async(
+        cmd, [this, callback](MavlinkCommandSender::Result result, float) {
+            receive_command_result(result, callback);
+        });
+}
+
+void CameraImpl::zoom_stop_async(const Camera::ResultCallback& callback)
+{
+    std::lock_guard<std::mutex> lock(_capture.mutex);
+
+    auto cmd = make_command_zoom_stop();
+
+    _system_impl->send_command_async(
+        cmd, [this, callback](MavlinkCommandSender::Result result, float) {
+            receive_command_result(result, callback);
+        });
+}
+
+void CameraImpl::zoom_range_async(float range, const Camera::ResultCallback& callback)
+{
+    std::lock_guard<std::mutex> lock(_capture.mutex);
+
+    auto cmd = make_command_zoom_range(range);
+
+    _system_impl->send_command_async(
+        cmd, [this, callback](MavlinkCommandSender::Result result, float) {
+            receive_command_result(result, callback);
+        });
+}
+
+void CameraImpl::track_point_async(
+    float point_x, float point_y, float radius, const Camera::ResultCallback& callback)
+{
+    std::lock_guard<std::mutex> lock(_capture.mutex);
+
+    auto cmd = make_command_track_point(point_x, point_y, radius);
+
+    _system_impl->send_command_async(
+        cmd, [this, callback](MavlinkCommandSender::Result result, float) {
+            receive_command_result(result, callback);
+        });
+}
+
+void CameraImpl::track_rectangle_async(
+    float top_left_x,
+    float top_left_y,
+    float bottom_right_x,
+    float bottom_right_y,
+    const Camera::ResultCallback& callback)
+{
+    std::lock_guard<std::mutex> lock(_capture.mutex);
+
+    auto cmd = make_command_track_rectangle(top_left_x, top_left_y, bottom_right_x, bottom_right_y);
+
+    _system_impl->send_command_async(
+        cmd, [this, callback](MavlinkCommandSender::Result result, float) {
+            receive_command_result(result, callback);
+        });
+}
+
+void CameraImpl::track_stop_async(const Camera::ResultCallback& callback)
+{
+    std::lock_guard<std::mutex> lock(_capture.mutex);
+
+    auto cmd = make_command_track_stop();
+
+    _system_impl->send_command_async(
+        cmd, [this, callback](MavlinkCommandSender::Result result, float) {
+            receive_command_result(result, callback);
+        });
+}
+
+void CameraImpl::focus_in_start_async(const Camera::ResultCallback& callback)
+{
+    std::lock_guard<std::mutex> lock(_capture.mutex);
+
+    auto cmd = make_command_focus_in();
+
+    _system_impl->send_command_async(
+        cmd, [this, callback](MavlinkCommandSender::Result result, float) {
+            receive_command_result(result, callback);
+        });
+}
+
+void CameraImpl::focus_out_start_async(const Camera::ResultCallback& callback)
+{
+    std::lock_guard<std::mutex> lock(_capture.mutex);
+
+    auto cmd = make_command_focus_out();
+
+    _system_impl->send_command_async(
+        cmd, [this, callback](MavlinkCommandSender::Result result, float) {
+            receive_command_result(result, callback);
+        });
+}
+
+void CameraImpl::focus_stop_async(const Camera::ResultCallback& callback)
+{
+    std::lock_guard<std::mutex> lock(_capture.mutex);
+
+    auto cmd = make_command_focus_stop();
+
+    _system_impl->send_command_async(
+        cmd, [this, callback](MavlinkCommandSender::Result result, float) {
+            receive_command_result(result, callback);
+        });
+}
+
+void CameraImpl::focus_range_async(float range, const Camera::ResultCallback& callback)
+{
+    std::lock_guard<std::mutex> lock(_capture.mutex);
+
+    auto cmd = make_command_focus_range(range);
+
+    _system_impl->send_command_async(
+        cmd, [this, callback](MavlinkCommandSender::Result result, float) {
+            receive_command_result(result, callback);
+        });
 }
 
 void CameraImpl::take_photo_async(const Camera::ResultCallback& callback)
@@ -600,6 +851,19 @@ CameraImpl::subscribe_information(const Camera::InformationCallback& callback)
     std::lock_guard<std::mutex> lock(_information.mutex);
     auto handle = _information.subscription_callbacks.subscribe(callback);
 
+    // If there was already a subscription, cancel the call
+    if (_status.call_every_cookie) {
+        _system_impl->remove_call_every(_status.call_every_cookie);
+    }
+
+    if (callback) {
+        _system_impl->remove_call_every(_status.call_every_cookie);
+        _status.call_every_cookie =
+            _system_impl->add_call_every([this]() { request_status(); }, 1.0);
+    } else {
+        _system_impl->remove_call_every(_status.call_every_cookie);
+    }
+
     return handle;
 }
 
@@ -609,7 +873,7 @@ void CameraImpl::unsubscribe_information(Camera::InformationHandle handle)
     _information.subscription_callbacks.unsubscribe(handle);
 }
 
-Camera::Result CameraImpl::start_video_streaming()
+Camera::Result CameraImpl::start_video_streaming(int32_t stream_id)
 {
     std::lock_guard<std::mutex> lock(_video_stream_info.mutex);
 
@@ -619,7 +883,7 @@ Camera::Result CameraImpl::start_video_streaming()
     }
 
     // TODO Check whether we're in video mode
-    auto command = make_command_start_video_streaming();
+    auto command = make_command_start_video_streaming(stream_id);
 
     auto result = camera_result_from_command_result(_system_impl->send_command(command));
     // if (result == Camera::Result::Success) {
@@ -630,12 +894,12 @@ Camera::Result CameraImpl::start_video_streaming()
     return result;
 }
 
-Camera::Result CameraImpl::stop_video_streaming()
+Camera::Result CameraImpl::stop_video_streaming(int32_t stream_id)
 {
     // TODO I think we need to maintain current state, whether we issued
     // video capture request or video streaming request, etc.We shouldn't
     // send stop video streaming if we've not started it!
-    auto command = make_command_stop_video_streaming();
+    auto command = make_command_stop_video_streaming(stream_id);
 
     auto result = camera_result_from_command_result(_system_impl->send_command(command));
     {
@@ -648,8 +912,10 @@ Camera::Result CameraImpl::stop_video_streaming()
 
 void CameraImpl::request_video_stream_info()
 {
-    _system_impl->send_command_async(make_command_request_video_stream_info(), nullptr);
-    _system_impl->send_command_async(make_command_request_video_stream_status(), nullptr);
+    _system_impl->mavlink_request_message().request(
+        MAVLINK_MSG_ID_VIDEO_STREAM_INFORMATION, _camera_id + MAV_COMP_ID_CAMERA, nullptr);
+    _system_impl->mavlink_request_message().request(
+        MAVLINK_MSG_ID_VIDEO_STREAM_STATUS, _camera_id + MAV_COMP_ID_CAMERA, nullptr);
 }
 
 Camera::VideoStreamInfo CameraImpl::video_stream_info()
@@ -667,8 +933,9 @@ CameraImpl::subscribe_video_stream_info(const Camera::VideoStreamInfoCallback& c
     auto handle = _video_stream_info.subscription_callbacks.subscribe(callback);
 
     if (callback) {
-        _system_impl->add_call_every(
-            [this]() { request_video_stream_info(); }, 1.0, &_video_stream_info.call_every_cookie);
+        _system_impl->remove_call_every(_video_stream_info.call_every_cookie);
+        _video_stream_info.call_every_cookie =
+            _system_impl->add_call_every([this]() { request_video_stream_info(); }, 1.0);
     } else {
         _system_impl->remove_call_every(_video_stream_info.call_every_cookie);
     }
@@ -693,6 +960,8 @@ CameraImpl::camera_result_from_command_result(const MavlinkCommandSender::Result
         case MavlinkCommandSender::Result::ConnectionError:
             // FALLTHROUGH
         case MavlinkCommandSender::Result::Busy:
+            return Camera::Result::Error;
+        case MavlinkCommandSender::Result::Failed:
             return Camera::Result::Error;
         case MavlinkCommandSender::Result::Denied:
             // FALLTHROUGH
@@ -842,8 +1111,9 @@ Camera::ModeHandle CameraImpl::subscribe_mode(const Camera::ModeCallback& callba
     notify_mode();
 
     if (callback) {
-        _system_impl->add_call_every(
-            [this]() { request_camera_settings(); }, 5.0, &_mode.call_every_cookie);
+        _system_impl->remove_call_every(_mode.call_every_cookie);
+        _mode.call_every_cookie =
+            _system_impl->add_call_every([this]() { request_camera_settings(); }, 5.0);
     } else {
         _system_impl->remove_call_every(_mode.call_every_cookie);
     }
@@ -870,8 +1140,10 @@ bool CameraImpl::interval_valid(float interval_s)
 
 void CameraImpl::request_status()
 {
-    _system_impl->send_command_async(make_command_request_camera_capture_status(), nullptr);
-    _system_impl->send_command_async(make_command_request_storage_info(), nullptr);
+    _system_impl->mavlink_request_message().request(
+        MAVLINK_MSG_ID_CAMERA_CAPTURE_STATUS, _camera_id + MAV_COMP_ID_CAMERA, nullptr);
+    _system_impl->mavlink_request_message().request(
+        MAVLINK_MSG_ID_STORAGE_INFORMATION, _camera_id + MAV_COMP_ID_CAMERA, nullptr);
 }
 
 Camera::StatusHandle CameraImpl::subscribe_status(const Camera::StatusCallback& callback)
@@ -1082,9 +1354,11 @@ void CameraImpl::request_missing_capture_info()
     if (!_capture_info.missing_image_retries.empty()) {
         auto it_lowest_retries = std::min_element(
             _capture_info.missing_image_retries.begin(), _capture_info.missing_image_retries.end());
-        _system_impl->send_command_async(
-            CameraImpl::make_command_request_camera_image_captured(it_lowest_retries->first),
-            nullptr);
+        _system_impl->mavlink_request_message().request(
+            MAVLINK_MSG_ID_CAMERA_IMAGE_CAPTURED,
+            _camera_id + MAV_COMP_ID_CAMERA,
+            nullptr,
+            it_lowest_retries->first);
         it_lowest_retries->second += 1;
     }
 }
@@ -1161,19 +1435,28 @@ void CameraImpl::process_camera_information(const mavlink_message_t& message)
 
         std::thread([this, camera_information]() {
             std::string content{};
-            const auto has_succeeded = fetch_camera_definition(camera_information, content);
+            const auto result = fetch_camera_definition(camera_information, content);
 
-            if (has_succeeded) {
+            if (result == Camera::Result::Success) {
                 LogDebug() << "Successfully loaded camera definition";
 
                 if (_camera_definition_callback) {
                     _system_impl->call_user_callback(
-                        [this]() { _camera_definition_callback(true); });
+                        [this, result]() { _camera_definition_callback(result); });
                 }
 
                 _camera_definition.reset(new CameraDefinition());
                 _camera_definition->load_string(content);
                 refresh_params();
+
+            } else if (result == Camera::Result::ProtocolUnsupported) {
+                LogWarn() << "Protocol for " << camera_information.cam_definition_uri
+                          << " not supported";
+                if (_camera_definition_callback) {
+                    _system_impl->call_user_callback(
+                        [this, result]() { _camera_definition_callback(result); });
+                }
+
             } else {
                 LogDebug() << "Failed to fetch camera definition!";
 
@@ -1185,7 +1468,7 @@ void CameraImpl::process_camera_information(const mavlink_message_t& message)
 
                     if (_camera_definition_callback) {
                         _system_impl->call_user_callback(
-                            [this]() { _camera_definition_callback(false); });
+                            [this, result]() { _camera_definition_callback(result); });
                     }
                 }
             }
@@ -1202,76 +1485,120 @@ bool CameraImpl::should_fetch_camera_definition(const std::string& uri) const
            !_has_camera_definition_timed_out;
 }
 
-bool CameraImpl::fetch_camera_definition(
-    const mavlink_camera_information_t& camera_information, std::string& camera_definition_out)
+bool CameraImpl::starts_with(const std::string& str, const std::string& prefix)
 {
-    auto download_succeeded =
-        download_definition_file(camera_information.cam_definition_uri, camera_definition_out);
-
-    if (download_succeeded) {
-        return true;
-    }
-
-    return load_stored_definition(camera_information, camera_definition_out);
+    return str.compare(0, prefix.size(), prefix) == 0;
 }
 
-bool CameraImpl::download_definition_file(
+Camera::Result CameraImpl::fetch_camera_definition(
+    const mavlink_camera_information_t& camera_information, std::string& camera_definition_out)
+{
+    auto& uri = camera_information.cam_definition_uri;
+
+    if (starts_with(uri, "http://") || starts_with(uri, "https://")) {
+        LogInfo() << "Download file: " << uri << " using cURL...";
+        auto result = download_definition_file_curl(uri, camera_definition_out);
+        LogInfo() << "Downloaded file, result " << result;
+        return result;
+    } else if (starts_with(uri, "mftp://") || starts_with(uri, "mavlinkftp://")) {
+        LogInfo() << "Download file: " << uri << " using MAVLink FTP...";
+        auto result = download_definition_file_mftp(uri, camera_definition_out);
+        LogInfo() << "Downloaded file, result " << result;
+        return result;
+    } else {
+        LogErr() << "Unknown protocol for URL: " << uri;
+        return Camera::Result::ProtocolUnsupported;
+    }
+}
+
+Camera::Result CameraImpl::download_definition_file_curl(
     const std::string& uri, std::string& camera_definition_out)
 {
+#if BUILD_WITHOUT_CURL == 1
+    UNUSED(uri);
+    UNUSED(camera_definition_out);
+    return Camera::Result::ProtocolUnsupported;
+#else
     HttpLoader http_loader;
     LogInfo() << "Downloading camera definition from: " << uri;
     if (!http_loader.download_text_sync(uri, camera_definition_out)) {
         LogErr() << "Failed to download camera definition.";
-        return false;
+        return Camera::Result::Error;
     }
+#endif
 
-    return true;
+    return Camera::Result::Success;
 }
 
-bool CameraImpl::load_stored_definition(
-    const mavlink_camera_information_t& camera_information, std::string& camera_definition_out)
+std::string CameraImpl::get_filename_from_path(const std::string& path)
 {
-    // TODO: we might also try to support the correct version of the xml files.
+    size_t pos = path.find_last_of("/");
+    if (pos != std::string::npos) {
+        return path.substr(pos + 1);
+    }
+    return path; // If no directory separator is found, return the whole path as the filename
+}
 
-    const auto vendor_name = std::string(
-        reinterpret_cast<const char*>(std::begin(camera_information.vendor_name)),
-        reinterpret_cast<const char*>(std::end(camera_information.vendor_name)));
+std::string CameraImpl::strip_mavlinkftp_prefix(const std::string& str)
+{
+    const std::string prefix1 = "mftp://";
+    const std::string prefix2 = "mavlinkftp://";
 
-    const auto model_name = std::string(
-        reinterpret_cast<const char*>(std::begin(camera_information.model_name)),
-        reinterpret_cast<const char*>(std::end(camera_information.model_name)));
+    if (str.compare(0, prefix1.size(), prefix1) == 0) {
+        return str.substr(prefix1.size());
+    }
+    if (str.compare(0, prefix2.size(), prefix2) == 0) {
+        return str.substr(prefix2.size());
+    }
+    return str; // If no known prefix is found, return the original string
+}
 
-    if (vendor_name == "Yuneec") {
-        if (model_name == "E90") {
-            LogInfo() << "Using cached file for Yuneec E90.";
-            camera_definition_out = e90xml;
-            return true;
-        } else if (model_name == "E50") {
-            LogInfo() << "Using cached file for Yuneec E50.";
-            camera_definition_out = e50xml;
-            return true;
-        } else if (model_name == "CGOET") {
-            LogInfo() << "Using cached file for Yuneec ET.";
-            camera_definition_out = cgoetxml;
-            return true;
-        } else if (model_name == "E10T") {
-            LogInfo() << "Using cached file for Yuneec E10T.";
-            camera_definition_out = e10txml;
-            return true;
-        } else if (model_name == "E30Z") {
-            LogInfo() << "Using cached file for Yuneec E30Z.";
-            camera_definition_out = e30zxml;
-            return true;
-        }
-    } else if (vendor_name == "Sony") {
-        if (model_name == "ILCE-7RM4") {
-            LogInfo() << "Using cached file for Sony ILCE-7RM4.";
-            camera_definition_out = ILCE7RM4xml;
-            return true;
-        }
+Camera::Result CameraImpl::download_definition_file_mftp(
+    const std::string& uri, std::string& camera_definition_out)
+{
+    std::string tmp_download_path;
+    const auto tmp_option = create_tmp_directory("mavsdk-camera-definition-download");
+    if (tmp_option) {
+        tmp_download_path = tmp_option.value().string();
+    } else {
+        tmp_download_path = "./mavsdk-camera-definition-download";
+        std::error_code err;
+        std::filesystem::create_directory(tmp_download_path, err);
     }
 
-    return false;
+    auto prom = std::promise<MavlinkFtpClient::ClientResult>();
+    auto fut = prom.get_future();
+
+    _system_impl->mavlink_ftp_client().download_async(
+        strip_mavlinkftp_prefix(uri),
+        tmp_download_path,
+        false,
+        [&prom](MavlinkFtpClient::ClientResult client_result, MavlinkFtpClient::ProgressData) {
+            if (client_result != MavlinkFtpClient::ClientResult::Next) {
+                prom.set_value(client_result);
+            }
+        },
+        static_cast<uint8_t>(_camera_id + MAV_COMP_ID_CAMERA));
+
+    auto result = fut.get();
+
+    if (result != MavlinkFtpClient::ClientResult::Success) {
+        LogErr() << "MAVLink FTP download failed: " << result;
+        return Camera::Result::Error;
+    }
+
+    std::filesystem::path tmp_file = std::filesystem::path(tmp_download_path) /
+                                     std::filesystem::path(get_filename_from_path(uri));
+
+    std::ifstream file_stream(tmp_file.string());
+    if (!file_stream.is_open()) {
+        LogErr() << "Could not open: " << tmp_file.string();
+        return Camera::Result::Error;
+    }
+    std::stringstream buffer;
+    buffer << file_stream.rdbuf();
+    camera_definition_out = buffer.str();
+    return Camera::Result::Success;
 }
 
 void CameraImpl::process_video_information(const mavlink_message_t& message)
@@ -1332,39 +1659,6 @@ void CameraImpl::process_video_stream_status(const mavlink_message_t& message)
     }
 
     notify_video_stream_info();
-}
-
-void CameraImpl::process_flight_information(const mavlink_message_t& message)
-{
-    mavlink_flight_information_t flight_information;
-    mavlink_msg_flight_information_decode(&message, &flight_information);
-
-    std::stringstream folder_name_stream;
-    {
-        std::lock_guard<std::mutex> information_lock(_information.mutex);
-
-        // For Yuneec cameras, the folder names can be derived from the flight ID,
-        // starting at 100 up to 999.
-        if (_information.data.vendor_name == "Yuneec" && _information.data.model_name == "E90") {
-            folder_name_stream << (101 + flight_information.flight_uuid % 899) << "E90HD";
-        } else if (
-            _information.data.vendor_name == "Yuneec" && _information.data.model_name == "E50") {
-            folder_name_stream << (101 + flight_information.flight_uuid % 899) << "E50HD";
-        } else if (
-            _information.data.vendor_name == "Yuneec" && _information.data.model_name == "CGOET") {
-            folder_name_stream << (101 + flight_information.flight_uuid % 899) << "CGOET";
-        } else if (
-            _information.data.vendor_name == "Yuneec" && _information.data.model_name == "E10T") {
-            folder_name_stream << (101 + flight_information.flight_uuid % 899) << "E10T";
-        } else {
-            // Folder name unknown
-        }
-    }
-
-    {
-        std::lock_guard<std::mutex> lock(_status.mutex);
-        _status.data.media_folder_name = folder_name_stream.str();
-    }
 }
 
 void CameraImpl::notify_video_stream_info()
@@ -1935,38 +2229,32 @@ bool CameraImpl::get_option_str(
 
 void CameraImpl::request_camera_settings()
 {
-    auto command_camera_settings = make_command_request_camera_settings();
-    _system_impl->send_command_async(command_camera_settings, nullptr);
-}
-
-void CameraImpl::request_flight_information()
-{
-    auto command_flight_information = make_command_request_flight_information();
-    _system_impl->send_command_async(command_flight_information, nullptr);
+    _system_impl->mavlink_request_message().request(
+        MAVLINK_MSG_ID_CAMERA_SETTINGS, _camera_id + MAV_COMP_ID_CAMERA, nullptr);
 }
 
 void CameraImpl::request_camera_information()
 {
-    auto command_camera_info = make_command_request_camera_info();
-    _system_impl->send_command_async(command_camera_info, nullptr);
+    _system_impl->mavlink_request_message().request(
+        MAVLINK_MSG_ID_CAMERA_INFORMATION, _camera_id + MAV_COMP_ID_CAMERA, nullptr);
 }
 
-Camera::Result CameraImpl::format_storage()
+Camera::Result CameraImpl::format_storage(int32_t storage_id)
 {
     auto prom = std::make_shared<std::promise<Camera::Result>>();
     auto ret = prom->get_future();
 
-    format_storage_async([prom](Camera::Result result) { prom->set_value(result); });
+    format_storage_async(storage_id, [prom](Camera::Result result) { prom->set_value(result); });
 
     return ret.get();
 }
 
-void CameraImpl::format_storage_async(Camera::ResultCallback callback)
+void CameraImpl::format_storage_async(int32_t storage_id, Camera::ResultCallback callback)
 {
     MavlinkCommandSender::CommandLong cmd_format{};
 
     cmd_format.command = MAV_CMD_STORAGE_FORMAT;
-    cmd_format.params.maybe_param1 = 1.0f; // storage ID
+    cmd_format.params.maybe_param1 = static_cast<float>(storage_id); // storage ID
     cmd_format.params.maybe_param2 = 1.0f; // format
     cmd_format.params.maybe_param3 = 1.0f; // clear
     cmd_format.target_component_id = _camera_id + MAV_COMP_ID_CAMERA;
@@ -1980,6 +2268,33 @@ void CameraImpl::format_storage_async(Camera::ResultCallback callback)
                     reset_following_format_storage();
                 }
 
+                callback(camera_result);
+            });
+        });
+}
+
+Camera::Result CameraImpl::reset_settings()
+{
+    auto prom = std::make_shared<std::promise<Camera::Result>>();
+    auto ret = prom->get_future();
+
+    reset_settings_async([prom](Camera::Result result) { prom->set_value(result); });
+
+    return ret.get();
+}
+void CameraImpl::reset_settings_async(const Camera::ResultCallback callback)
+{
+    MavlinkCommandSender::CommandLong cmd_format{};
+
+    cmd_format.command = MAV_CMD_RESET_CAMERA_SETTINGS;
+    cmd_format.params.maybe_param1 = 1.0f; // reset
+    cmd_format.target_component_id = _camera_id + MAV_COMP_ID_CAMERA;
+
+    _system_impl->send_command_async(
+        cmd_format, [this, callback](MavlinkCommandSender::Result result, float progress) {
+            UNUSED(progress);
+
+            receive_command_result(result, [this, callback](Camera::Result camera_result) {
                 callback(camera_result);
             });
         });
@@ -2084,8 +2399,11 @@ void CameraImpl::list_photos_async(
                         return;
                     }
 
-                    _system_impl->send_command_async(
-                        make_command_request_camera_image_captured(i), nullptr);
+                    _system_impl->mavlink_request_message().request(
+                        MAVLINK_MSG_ID_CAMERA_IMAGE_CAPTURED,
+                        _camera_id + MAV_COMP_ID_CAMERA,
+                        nullptr,
+                        i);
                     cv_status = _captured_request_cv.wait_for(
                         capture_request_lock, std::chrono::seconds(1));
                 }

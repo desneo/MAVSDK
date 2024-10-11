@@ -36,9 +36,9 @@ void contains_num_options(
 
 TEST(CameraTest, ShowSettingsAndOptions)
 {
-    Mavsdk mavsdk;
+    Mavsdk mavsdk{Mavsdk::Configuration{ComponentType::GroundStation}};
 
-    ConnectionResult ret = mavsdk.add_udp_connection();
+    ConnectionResult ret = mavsdk.add_any_connection("udpin://0.0.0.0:14540");
     ASSERT_EQ(ret, ConnectionResult::Success);
 
     // Wait for system to connect via heartbeat.
@@ -125,9 +125,9 @@ TEST(CameraTest, ShowSettingsAndOptions)
 
 TEST(CameraTest, SetSettings)
 {
-    Mavsdk mavsdk;
+    Mavsdk mavsdk{Mavsdk::Configuration{ComponentType::GroundStation}};
 
-    ConnectionResult connection_ret = mavsdk.add_udp_connection();
+    ConnectionResult connection_ret = mavsdk.add_any_connection("udpin://0.0.0.0:14540");
     ASSERT_EQ(connection_ret, ConnectionResult::Success);
 
     // Wait for system to connect via heartbeat.
@@ -263,9 +263,9 @@ receive_current_settings(bool& subscription_called, const std::vector<Camera::Se
 
 TEST(CameraTest, SubscribeCurrentSettings)
 {
-    Mavsdk mavsdk;
+    Mavsdk mavsdk{Mavsdk::Configuration{ComponentType::GroundStation}};
 
-    ConnectionResult connection_ret = mavsdk.add_udp_connection();
+    ConnectionResult connection_ret = mavsdk.add_any_connection("udpin://0.0.0.0:14540");
     ASSERT_EQ(connection_ret, ConnectionResult::Success);
 
     // Wait for system to connect via heartbeat.
@@ -327,9 +327,9 @@ static void receive_possible_setting_options(
 
 TEST(CameraTest, SubscribePossibleSettings)
 {
-    Mavsdk mavsdk;
+    Mavsdk mavsdk{Mavsdk::Configuration{ComponentType::GroundStation}};
 
-    ConnectionResult connection_ret = mavsdk.add_udp_connection();
+    ConnectionResult connection_ret = mavsdk.add_any_connection("udpin://0.0.0.0:14540");
     ASSERT_EQ(connection_ret, ConnectionResult::Success);
 
     // Wait for system to connect via heartbeat.

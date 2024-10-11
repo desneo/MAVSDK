@@ -4,9 +4,9 @@
 
 namespace mavsdk {
 
-Mavsdk::Mavsdk()
+Mavsdk::Mavsdk(Configuration configuration)
 {
-    _impl = std::make_shared<MavsdkImpl>();
+    _impl = std::make_shared<MavsdkImpl>(configuration);
 }
 
 Mavsdk::~Mavsdk() = default;
@@ -26,38 +26,6 @@ std::pair<ConnectionResult, Mavsdk::ConnectionHandle> Mavsdk::add_any_connection
     const std::string& connection_url, ForwardingOption forwarding_option)
 {
     return _impl->add_any_connection(connection_url, forwarding_option);
-}
-
-ConnectionResult Mavsdk::add_udp_connection(int local_port, ForwardingOption forwarding_option)
-{
-    return _impl->add_udp_connection(DEFAULT_UDP_BIND_IP, local_port, forwarding_option).first;
-}
-
-ConnectionResult Mavsdk::add_udp_connection(
-    const std::string& local_bind_ip, const int local_port, ForwardingOption forwarding_option)
-{
-    return _impl->add_udp_connection(local_bind_ip, local_port, forwarding_option).first;
-}
-
-ConnectionResult Mavsdk::setup_udp_remote(
-    const std::string& remote_ip, int remote_port, ForwardingOption forwarding_option)
-{
-    return _impl->setup_udp_remote(remote_ip, remote_port, forwarding_option).first;
-}
-
-ConnectionResult Mavsdk::add_tcp_connection(
-    const std::string& remote_ip, const int remote_port, ForwardingOption forwarding_option)
-{
-    return _impl->add_tcp_connection(remote_ip, remote_port, forwarding_option).first;
-}
-
-ConnectionResult Mavsdk::add_serial_connection(
-    const std::string& dev_path,
-    const int baudrate,
-    bool flow_control,
-    ForwardingOption forwarding_option)
-{
-    return _impl->add_serial_connection(dev_path, baudrate, flow_control, forwarding_option).first;
 }
 
 void Mavsdk::remove_connection(ConnectionHandle handle)
@@ -95,8 +63,13 @@ void Mavsdk::unsubscribe_on_new_system(NewSystemHandle handle)
     _impl->unsubscribe_on_new_system(handle);
 }
 
+std::shared_ptr<ServerComponent> Mavsdk::server_component(unsigned instance)
+{
+    return _impl->server_component(instance);
+}
+
 std::shared_ptr<ServerComponent>
-Mavsdk::server_component_by_type(ServerComponentType server_component_type, unsigned instance)
+Mavsdk::server_component_by_type(ComponentType server_component_type, unsigned instance)
 {
     return _impl->server_component_by_type(server_component_type, instance);
 }
@@ -111,52 +84,65 @@ Mavsdk::Configuration::Configuration(
     _system_id(system_id),
     _component_id(component_id),
     _always_send_heartbeats(always_send_heartbeats),
-    _usage_type(usage_type_for_component(component_id))
+    _component_type(component_type_for_component_id(component_id))
 {}
 
-Mavsdk::Configuration::UsageType
-Mavsdk::Configuration::usage_type_for_component(uint8_t component_id)
+ComponentType Mavsdk::Configuration::component_type_for_component_id(uint8_t component_id)
 {
     switch (component_id) {
-        case MavsdkImpl::DEFAULT_COMPONENT_ID_GCS:
-            return UsageType::GroundStation;
-        case MavsdkImpl::DEFAULT_COMPONENT_ID_CC:
-            return UsageType::CompanionComputer;
-        case MavsdkImpl::DEFAULT_COMPONENT_ID_AUTOPILOT:
-            return UsageType::Autopilot;
-        case MavsdkImpl::DEFAULT_COMPONENT_ID_CAMERA:
-            return UsageType::Camera;
+        case Mavsdk::DEFAULT_COMPONENT_ID_AUTOPILOT:
+            return ComponentType::Autopilot;
+        case Mavsdk::DEFAULT_COMPONENT_ID_GCS:
+            return ComponentType::GroundStation;
+        case Mavsdk::DEFAULT_COMPONENT_ID_CC:
+            return ComponentType::CompanionComputer;
+        case Mavsdk::DEFAULT_COMPONENT_ID_CAMERA:
+            return ComponentType::Camera;
+        case Mavsdk::DEFAULT_COMPONENT_ID_GIMBAL:
+            return ComponentType::Gimbal;
+        case Mavsdk::DEFAULT_COMPONENT_ID_REMOTEID:
+            return ComponentType::RemoteId;
         default:
-            return UsageType::Custom;
+            return ComponentType::Custom;
     }
 }
 
-Mavsdk::Configuration::Configuration(UsageType usage_type) :
-    _system_id(MavsdkImpl::DEFAULT_SYSTEM_ID_GCS),
-    _component_id(MavsdkImpl::DEFAULT_COMPONENT_ID_GCS),
+Mavsdk::Configuration::Configuration(ComponentType component_type) :
+    _system_id(Mavsdk::DEFAULT_SYSTEM_ID_GCS),
+    _component_id(Mavsdk::DEFAULT_COMPONENT_ID_GCS),
     _always_send_heartbeats(false),
-    _usage_type(usage_type)
+    _component_type(component_type)
 {
-    switch (usage_type) {
-        case Mavsdk::Configuration::UsageType::GroundStation:
-            _system_id = MavsdkImpl::DEFAULT_SYSTEM_ID_GCS;
-            _component_id = MavsdkImpl::DEFAULT_COMPONENT_ID_GCS;
+    switch (component_type) {
+        case ComponentType::GroundStation:
+            _system_id = Mavsdk::DEFAULT_SYSTEM_ID_GCS;
+            _component_id = Mavsdk::DEFAULT_COMPONENT_ID_GCS;
             _always_send_heartbeats = false;
             break;
-        case Mavsdk::Configuration::UsageType::CompanionComputer:
+        case ComponentType::CompanionComputer:
             // TODO implement auto-detection of system ID - maybe from heartbeats?
-            _system_id = MavsdkImpl::DEFAULT_SYSTEM_ID_CC;
-            _component_id = MavsdkImpl::DEFAULT_COMPONENT_ID_CC;
+            _system_id = Mavsdk::DEFAULT_SYSTEM_ID_CC;
+            _component_id = Mavsdk::DEFAULT_COMPONENT_ID_CC;
             _always_send_heartbeats = true;
             break;
-        case Mavsdk::Configuration::UsageType::Autopilot:
-            _system_id = MavsdkImpl::DEFAULT_SYSTEM_ID_AUTOPILOT;
-            _component_id = MavsdkImpl::DEFAULT_COMPONENT_ID_AUTOPILOT;
+        case ComponentType::Autopilot:
+            _system_id = Mavsdk::DEFAULT_SYSTEM_ID_AUTOPILOT;
+            _component_id = Mavsdk::DEFAULT_COMPONENT_ID_AUTOPILOT;
             _always_send_heartbeats = true;
             break;
-        case Mavsdk::Configuration::UsageType::Camera:
-            _system_id = MavsdkImpl::DEFAULT_SYSTEM_ID_CAMERA;
-            _component_id = MavsdkImpl::DEFAULT_COMPONENT_ID_CAMERA;
+        case ComponentType::Camera:
+            _system_id = Mavsdk::DEFAULT_SYSTEM_ID_CAMERA;
+            _component_id = Mavsdk::DEFAULT_COMPONENT_ID_CAMERA;
+            _always_send_heartbeats = true;
+            break;
+        case ComponentType::Gimbal:
+            _system_id = Mavsdk::DEFAULT_SYSTEM_ID_GIMBAL;
+            _component_id = Mavsdk::DEFAULT_COMPONENT_ID_GIMBAL;
+            _always_send_heartbeats = true;
+            break;
+        case ComponentType::RemoteId:
+            _system_id = Mavsdk::DEFAULT_SYSTEM_ID_REMOTEID;
+            _component_id = Mavsdk::DEFAULT_COMPONENT_ID_REMOTEID;
             _always_send_heartbeats = true;
             break;
         default:
@@ -194,14 +180,14 @@ void Mavsdk::Configuration::set_always_send_heartbeats(bool always_send_heartbea
     _always_send_heartbeats = always_send_heartbeats;
 }
 
-Mavsdk::Configuration::UsageType Mavsdk::Configuration::get_usage_type() const
+ComponentType Mavsdk::Configuration::get_component_type() const
 {
-    return _usage_type;
+    return _component_type;
 }
 
-void Mavsdk::Configuration::set_usage_type(Mavsdk::Configuration::UsageType usage_type)
+void Mavsdk::Configuration::set_component_type(ComponentType component_type)
 {
-    _usage_type = usage_type;
+    _component_type = component_type;
 }
 
 void Mavsdk::intercept_incoming_messages_async(std::function<bool(mavlink_message_t&)> callback)

@@ -664,6 +664,7 @@ public:
             float(NAN)}; /**< @brief Maximum distance the sensor can measure, NaN if unknown. */
         float current_distance_m{
             float(NAN)}; /**< @brief Current distance reading, NaN if unknown. */
+        EulerAngle orientation{}; /**< @brief Sensor Orientation reading. */
     };
 
     /**
@@ -1264,62 +1265,6 @@ public:
      * @return One AngularVelocityBody update.
      */
     AngularVelocityBody attitude_angular_velocity_body() const;
-
-    /**
-     * @brief Callback type for subscribe_camera_attitude_quaternion.
-     */
-    using CameraAttitudeQuaternionCallback = std::function<void(Quaternion)>;
-
-    /**
-     * @brief Handle type for subscribe_camera_attitude_quaternion.
-     */
-    using CameraAttitudeQuaternionHandle = Handle<Quaternion>;
-
-    /**
-     * @brief Subscribe to 'camera attitude' updates (quaternion).
-     */
-    CameraAttitudeQuaternionHandle
-    subscribe_camera_attitude_quaternion(const CameraAttitudeQuaternionCallback& callback);
-
-    /**
-     * @brief Unsubscribe from subscribe_camera_attitude_quaternion
-     */
-    void unsubscribe_camera_attitude_quaternion(CameraAttitudeQuaternionHandle handle);
-
-    /**
-     * @brief Poll for 'Quaternion' (blocking).
-     *
-     * @return One Quaternion update.
-     */
-    Quaternion camera_attitude_quaternion() const;
-
-    /**
-     * @brief Callback type for subscribe_camera_attitude_euler.
-     */
-    using CameraAttitudeEulerCallback = std::function<void(EulerAngle)>;
-
-    /**
-     * @brief Handle type for subscribe_camera_attitude_euler.
-     */
-    using CameraAttitudeEulerHandle = Handle<EulerAngle>;
-
-    /**
-     * @brief Subscribe to 'camera attitude' updates (Euler).
-     */
-    CameraAttitudeEulerHandle
-    subscribe_camera_attitude_euler(const CameraAttitudeEulerCallback& callback);
-
-    /**
-     * @brief Unsubscribe from subscribe_camera_attitude_euler
-     */
-    void unsubscribe_camera_attitude_euler(CameraAttitudeEulerHandle handle);
-
-    /**
-     * @brief Poll for 'EulerAngle' (blocking).
-     *
-     * @return One EulerAngle update.
-     */
-    EulerAngle camera_attitude_euler() const;
 
     /**
      * @brief Callback type for subscribe_velocity_ned.
@@ -2063,30 +2008,15 @@ public:
 
     /**
      * @brief Set rate of camera attitude updates.
-     *
-     * This function is non-blocking. See 'set_rate_camera_attitude' for the blocking counterpart.
-     */
-    void set_rate_camera_attitude_async(double rate_hz, const ResultCallback callback);
-
-    /**
-     * @brief Set rate of camera attitude updates.
-     *
-     * This function is blocking. See 'set_rate_camera_attitude_async' for the non-blocking
-     * counterpart.
-     *
-     * @return Result of request.
-     */
-    Result set_rate_camera_attitude(double rate_hz) const;
-
-    /**
-     * @brief Set rate to 'ground speed' updates (NED).
+     * Set rate to 'ground speed' updates (NED).
      *
      * This function is non-blocking. See 'set_rate_velocity_ned' for the blocking counterpart.
      */
     void set_rate_velocity_ned_async(double rate_hz, const ResultCallback callback);
 
     /**
-     * @brief Set rate to 'ground speed' updates (NED).
+     * @brief Set rate of camera attitude updates.
+     * Set rate to 'ground speed' updates (NED).
      *
      * This function is blocking. See 'set_rate_velocity_ned_async' for the non-blocking
      * counterpart.

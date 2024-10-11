@@ -4,25 +4,21 @@
 #include "log.h"
 #include <future>
 #include <mutex>
+#include <thread>
 #include <gtest/gtest.h>
 
 using namespace mavsdk;
 
 TEST(SystemTest, CameraTakePhoto)
 {
-    Mavsdk mavsdk_groundstation;
-    mavsdk_groundstation.set_configuration(
-        Mavsdk::Configuration{Mavsdk::Configuration::UsageType::GroundStation});
+    Mavsdk mavsdk_groundstation{Mavsdk::Configuration{ComponentType::GroundStation}};
 
-    Mavsdk mavsdk_camera;
-    mavsdk_camera.set_configuration(
-        Mavsdk::Configuration{Mavsdk::Configuration::UsageType::Camera});
+    Mavsdk mavsdk_camera{Mavsdk::Configuration{ComponentType::Camera}};
 
     ASSERT_EQ(mavsdk_groundstation.add_any_connection("udp://:17000"), ConnectionResult::Success);
     ASSERT_EQ(mavsdk_camera.add_any_connection("udp://127.0.0.1:17000"), ConnectionResult::Success);
 
-    auto camera_server =
-        CameraServer{mavsdk_camera.server_component_by_type(Mavsdk::ServerComponentType::Camera)};
+    auto camera_server = CameraServer{mavsdk_camera.server_component()};
     camera_server.subscribe_take_photo([&camera_server](int32_t index) {
         LogInfo() << "Let's take photo " << index;
 
@@ -30,7 +26,7 @@ TEST(SystemTest, CameraTakePhoto)
         info.index = index;
         info.is_success = true;
 
-        camera_server.respond_take_photo(CameraServer::TakePhotoFeedback::Ok, info);
+        camera_server.respond_take_photo(CameraServer::CameraFeedback::Ok, info);
     });
 
     auto prom = std::promise<std::shared_ptr<System>>();
@@ -69,4 +65,6 @@ TEST(SystemTest, CameraTakePhoto)
     ASSERT_EQ(
         received_captured_info_fut.wait_for(std::chrono::seconds(10)), std::future_status::ready);
     received_captured_info_fut.get();
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 }

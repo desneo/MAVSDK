@@ -1,4 +1,5 @@
 #include <iostream>
+#include <future>
 #include "integration_test_helper.h"
 #include "mavsdk.h"
 #include "plugins/action/action.h"
@@ -6,10 +7,10 @@
 
 using namespace mavsdk;
 
-TEST_F(SitlTest, ActionTakeoffAndKill)
+TEST(SitlTest, ActionTakeoffAndKill)
 {
-    Mavsdk mavsdk;
-    ASSERT_EQ(mavsdk.add_udp_connection(), ConnectionResult::Success);
+    Mavsdk mavsdk{Mavsdk::Configuration{ComponentType::GroundStation}};
+    ASSERT_EQ(mavsdk.add_any_connection("udpin://0.0.0.0:14540"), ConnectionResult::Success);
 
     {
         LogInfo() << "Waiting to discover vehicle";

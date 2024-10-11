@@ -8,11 +8,11 @@ using namespace mavsdk;
 void print_health(Telemetry::Health health);
 void print_rc_status(Telemetry::RcStatus rc_status);
 
-TEST_F(SitlTest, TelemetryHealth)
+TEST(SitlTest, TelemetryHealth)
 {
-    Mavsdk mavsdk;
+    Mavsdk mavsdk{Mavsdk::Configuration{ComponentType::GroundStation}};
 
-    ConnectionResult ret = mavsdk.add_udp_connection();
+    ConnectionResult ret = mavsdk.add_any_connection("udpin://0.0.0.0:14540");
     ASSERT_EQ(ret, ConnectionResult::Success);
     std::this_thread::sleep_for(std::chrono::seconds(2));
 

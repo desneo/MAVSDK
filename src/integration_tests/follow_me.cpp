@@ -29,11 +29,11 @@ void send_location_updates(
 const size_t N_LOCATIONS = 100ul;
 
 /* Test FollowMe with a stationary target at one location */
-TEST_F(SitlTest, PX4FollowMeOneLocation)
+TEST(SitlTest, PX4FollowMeOneLocation)
 {
-    Mavsdk mavsdk;
+    Mavsdk mavsdk{Mavsdk::Configuration{ComponentType::GroundStation}};
 
-    ConnectionResult ret = mavsdk.add_udp_connection();
+    ConnectionResult ret = mavsdk.add_any_connection("udpin://0.0.0.0:14540");
     ASSERT_EQ(ConnectionResult::Success, ret);
 
     // Wait for system to connect via heartbeat.
@@ -112,11 +112,11 @@ TEST_F(SitlTest, PX4FollowMeOneLocation)
 }
 
 /* Test FollowMe with a dynamically moving target */
-TEST_F(SitlTest, PX4FollowMeMultiLocationWithConfig)
+TEST(SitlTest, PX4FollowMeMultiLocationWithConfig)
 {
-    Mavsdk mavsdk;
+    Mavsdk mavsdk{Mavsdk::Configuration{ComponentType::GroundStation}};
 
-    ConnectionResult ret = mavsdk.add_udp_connection();
+    ConnectionResult ret = mavsdk.add_any_connection("udpin://0.0.0.0:14540");
     ASSERT_EQ(ConnectionResult::Success, ret);
 
     // Wait for system to connect via heartbeat.

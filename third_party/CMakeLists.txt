@@ -4,19 +4,21 @@ project(third_party)
 
 include(cmake/build_target.cmake)
 
-if (SUPERBUILD)
-    list(APPEND CMAKE_PREFIX_PATH "${DEPS_INSTALL_PATH}")
-    set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} PARENT_SCOPE)
+list(APPEND CMAKE_PREFIX_PATH "${DEPS_INSTALL_PATH}")
+set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} PARENT_SCOPE)
 
+if(SUPERBUILD)
     build_target(mavlink)
     build_target(jsoncpp)
     build_target(tinyxml2)
+    build_target(liblzma)
 
-    if(NOT IOS)
-        build_target(zlib)
+    if(NOT BUILD_WITHOUT_CURL)
+        if(NOT IOS)
+            build_target(zlib-ng)
+        endif()
+        build_target(curl)
     endif()
-
-    build_target(curl)
 
     if(BUILD_MAVSDK_SERVER)
         build_target(openssl)
@@ -27,10 +29,14 @@ if (SUPERBUILD)
         build_target(grpc)
     endif()
 
+    if(BUILD_TESTING)
+        build_target(gtest)
+    endif()
+
 endif()
 
-if (ENABLE_CPPTRACE)
-    list(APPEND CMAKE_PREFIX_PATH "${DEPS_INSTALL_PATH}")
-    set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} PARENT_SCOPE)
+build_target(libevents)
+
+if(ENABLE_CPPTRACE)
     build_target(cpptrace)
 endif()

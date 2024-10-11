@@ -10,19 +10,14 @@ static void receive_capture_info(Camera::CaptureInfo capture_info, bool& receive
 
 TEST(CameraTest, TakePhotoSingle)
 {
-    Mavsdk mavsdk_groundstation;
-    mavsdk_groundstation.set_configuration(
-        Mavsdk::Configuration{Mavsdk::Configuration::UsageType::GroundStation});
+    Mavsdk mavsdk_groundstation{Mavsdk::Configuration{ComponentType::GroundStation}};
 
-    Mavsdk mavsdk_camera;
-    mavsdk_camera.set_configuration(
-        Mavsdk::Configuration{Mavsdk::Configuration::UsageType::Camera});
+    Mavsdk mavsdk_camera{Mavsdk::Configuration{ComponentType::Camera}};
 
     ASSERT_EQ(mavsdk_groundstation.add_any_connection("udp://:17000"), ConnectionResult::Success);
     ASSERT_EQ(mavsdk_camera.add_any_connection("udp://127.0.0.1:17000"), ConnectionResult::Success);
 
-    auto camera_server =
-        CameraServer{mavsdk_camera.server_component_by_type(Mavsdk::ServerComponentType::Camera)};
+    auto camera_server = CameraServer{mavsdk_camera.server_component()};
     camera_server.subscribe_take_photo([&camera_server](int32_t index) {
         LogInfo() << "Let's take photo " << index;
 
@@ -30,7 +25,7 @@ TEST(CameraTest, TakePhotoSingle)
         info.index = index;
         info.is_success = true;
 
-        camera_server.respond_take_photo(CameraServer::TakePhotoFeedback::Ok, info);
+        camera_server.respond_take_photo(CameraServer::CameraFeedback::Ok, info);
     });
 
     // Wait for system to connect via heartbeat.
@@ -57,11 +52,11 @@ TEST(CameraTest, TakePhotoSingle)
 
 TEST(CameraTest, TakePhotosMultiple)
 {
-    Mavsdk mavsdk;
+    Mavsdk mavsdk{Mavsdk::Configuration{ComponentType::GroundStation}};
 
     const int num_photos_to_take = 3;
 
-    ConnectionResult ret = mavsdk.add_udp_connection();
+    ConnectionResult ret = mavsdk.add_any_connection("udpin://0.0.0.0:14540");
     ASSERT_EQ(ret, ConnectionResult::Success);
 
     // Wait for system to connect via heartbeat.

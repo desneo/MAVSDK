@@ -17,10 +17,10 @@ static bool should_keep_message(const mavlink_message_t& message);
 static std::default_random_engine generator;
 static std::uniform_real_distribution<double> distribution(0.0, 1.0);
 
-TEST_F(SitlTest, PX4MissionTransferLossy)
+TEST(SitlTest, PX4MissionTransferLossy)
 {
-    Mavsdk mavsdk;
-    ASSERT_EQ(mavsdk.add_udp_connection(), ConnectionResult::Success);
+    Mavsdk mavsdk{Mavsdk::Configuration{ComponentType::GroundStation}};
+    ASSERT_EQ(mavsdk.add_any_connection("udpin://0.0.0.0:14540"), ConnectionResult::Success);
 
     {
         LogInfo() << "Waiting to discover vehicle";

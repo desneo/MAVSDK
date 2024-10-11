@@ -23,7 +23,7 @@ static void usage(const std::string& bin_name)
               << " For TCP : tcp://[server_host][:server_port]\n"
               << " For UDP : udp://[bind_host][:bind_port]\n"
               << " For Serial : serial:///path/to/serial/dev[:baudrate]\n"
-              << "For example, to connect to the simulator use URL: udp://:14540\n";
+              << "For example, to connect to the simulator use URL: udpin://0.0.0.0:14540\n";
 }
 
 int main(int argc, char* argv[])
@@ -35,7 +35,7 @@ int main(int argc, char* argv[])
 
     const std::string connection_url = argv[1];
 
-    Mavsdk mavsdk;
+    Mavsdk mavsdk{Mavsdk::Configuration{ComponentType::GroundStation}};
 
     std::cout << "Waiting to discover system...\n";
     auto prom = std::promise<std::shared_ptr<System>>{};

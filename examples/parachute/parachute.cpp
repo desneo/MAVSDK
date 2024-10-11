@@ -25,7 +25,7 @@ static void usage(const std::string& bin_name)
               << " For TCP : tcp://[server_host][:server_port]\n"
               << " For UDP : udp://[bind_host][:bind_port]\n"
               << " For Serial : serial:///path/to/serial/dev[:baudrate]\n"
-              << "For example, to connect to the simulator use URL: udp://:14540\n";
+              << "For example, to connect to the simulator use URL: udpin://0.0.0.0:14540\n";
 }
 
 static void process_command_long(const mavlink_message_t& message, uint8_t our_sysid)
@@ -79,12 +79,11 @@ int main(int argc, char* argv[])
 
     const std::string connection_url = argv[1];
 
-    Mavsdk mavsdk;
-
     // We start with sysid 1 but adapt to the one of the autopilot once
     // we have discoverd it.
     uint8_t our_sysid = 1;
-    mavsdk.set_configuration(Mavsdk::Configuration{our_sysid, MAV_COMP_ID_PARACHUTE, false});
+
+    Mavsdk mavsdk{Mavsdk::Configuration{our_sysid, MAV_COMP_ID_PARACHUTE, false}};
 
     const ConnectionResult connection_result = mavsdk.add_any_connection(connection_url);
 

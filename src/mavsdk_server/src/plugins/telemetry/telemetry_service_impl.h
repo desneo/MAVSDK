@@ -15,6 +15,7 @@
 #include <future>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <sstream>
 #include <vector>
 
@@ -922,6 +923,9 @@ public:
 
         rpc_obj->set_current_distance_m(distance_sensor.current_distance_m);
 
+        rpc_obj->set_allocated_orientation(
+            translateToRpcEulerAngle(distance_sensor.orientation).release());
+
         return rpc_obj;
     }
 
@@ -935,6 +939,8 @@ public:
         obj.maximum_distance_m = distance_sensor.maximum_distance_m();
 
         obj.current_distance_m = distance_sensor.current_distance_m();
+
+        obj.orientation = translateFromRpcEulerAngle(distance_sensor.orientation());
 
         return obj;
     }
@@ -1713,90 +1719,6 @@ public:
                     if (!*is_finished && !writer->Write(rpc_response)) {
                         _lazy_plugin.maybe_plugin()->unsubscribe_attitude_angular_velocity_body(
                             handle);
-
-                        *is_finished = true;
-                        unregister_stream_stop_promise(stream_closed_promise);
-                        stream_closed_promise->set_value();
-                    }
-                });
-
-        stream_closed_future.wait();
-        std::unique_lock<std::mutex> lock(*subscribe_mutex);
-        *is_finished = true;
-
-        return grpc::Status::OK;
-    }
-
-    grpc::Status SubscribeCameraAttitudeQuaternion(
-        grpc::ServerContext* /* context */,
-        const mavsdk::rpc::telemetry::SubscribeCameraAttitudeQuaternionRequest* /* request */,
-        grpc::ServerWriter<rpc::telemetry::CameraAttitudeQuaternionResponse>* writer) override
-    {
-        if (_lazy_plugin.maybe_plugin() == nullptr) {
-            return grpc::Status::OK;
-        }
-
-        auto stream_closed_promise = std::make_shared<std::promise<void>>();
-        auto stream_closed_future = stream_closed_promise->get_future();
-        register_stream_stop_promise(stream_closed_promise);
-
-        auto is_finished = std::make_shared<bool>(false);
-        auto subscribe_mutex = std::make_shared<std::mutex>();
-
-        const mavsdk::Telemetry::CameraAttitudeQuaternionHandle handle =
-            _lazy_plugin.maybe_plugin()->subscribe_camera_attitude_quaternion(
-                [this, &writer, &stream_closed_promise, is_finished, subscribe_mutex, &handle](
-                    const mavsdk::Telemetry::Quaternion camera_attitude_quaternion) {
-                    rpc::telemetry::CameraAttitudeQuaternionResponse rpc_response;
-
-                    rpc_response.set_allocated_attitude_quaternion(
-                        translateToRpcQuaternion(camera_attitude_quaternion).release());
-
-                    std::unique_lock<std::mutex> lock(*subscribe_mutex);
-                    if (!*is_finished && !writer->Write(rpc_response)) {
-                        _lazy_plugin.maybe_plugin()->unsubscribe_camera_attitude_quaternion(handle);
-
-                        *is_finished = true;
-                        unregister_stream_stop_promise(stream_closed_promise);
-                        stream_closed_promise->set_value();
-                    }
-                });
-
-        stream_closed_future.wait();
-        std::unique_lock<std::mutex> lock(*subscribe_mutex);
-        *is_finished = true;
-
-        return grpc::Status::OK;
-    }
-
-    grpc::Status SubscribeCameraAttitudeEuler(
-        grpc::ServerContext* /* context */,
-        const mavsdk::rpc::telemetry::SubscribeCameraAttitudeEulerRequest* /* request */,
-        grpc::ServerWriter<rpc::telemetry::CameraAttitudeEulerResponse>* writer) override
-    {
-        if (_lazy_plugin.maybe_plugin() == nullptr) {
-            return grpc::Status::OK;
-        }
-
-        auto stream_closed_promise = std::make_shared<std::promise<void>>();
-        auto stream_closed_future = stream_closed_promise->get_future();
-        register_stream_stop_promise(stream_closed_promise);
-
-        auto is_finished = std::make_shared<bool>(false);
-        auto subscribe_mutex = std::make_shared<std::mutex>();
-
-        const mavsdk::Telemetry::CameraAttitudeEulerHandle handle =
-            _lazy_plugin.maybe_plugin()->subscribe_camera_attitude_euler(
-                [this, &writer, &stream_closed_promise, is_finished, subscribe_mutex, &handle](
-                    const mavsdk::Telemetry::EulerAngle camera_attitude_euler) {
-                    rpc::telemetry::CameraAttitudeEulerResponse rpc_response;
-
-                    rpc_response.set_allocated_attitude_euler(
-                        translateToRpcEulerAngle(camera_attitude_euler).release());
-
-                    std::unique_lock<std::mutex> lock(*subscribe_mutex);
-                    if (!*is_finished && !writer->Write(rpc_response)) {
-                        _lazy_plugin.maybe_plugin()->unsubscribe_camera_attitude_euler(handle);
 
                         *is_finished = true;
                         unregister_stream_stop_promise(stream_closed_promise);
@@ -2960,34 +2882,6 @@ public:
         return grpc::Status::OK;
     }
 
-    grpc::Status SetRateCameraAttitude(
-        grpc::ServerContext* /* context */,
-        const rpc::telemetry::SetRateCameraAttitudeRequest* request,
-        rpc::telemetry::SetRateCameraAttitudeResponse* response) override
-    {
-        if (_lazy_plugin.maybe_plugin() == nullptr) {
-            if (response != nullptr) {
-                auto result = mavsdk::Telemetry::Result::NoSystem;
-                fillResponseWithResult(response, result);
-            }
-
-            return grpc::Status::OK;
-        }
-
-        if (request == nullptr) {
-            LogWarn() << "SetRateCameraAttitude sent with a null request! Ignoring...";
-            return grpc::Status::OK;
-        }
-
-        auto result = _lazy_plugin.maybe_plugin()->set_rate_camera_attitude(request->rate_hz());
-
-        if (response != nullptr) {
-            fillResponseWithResult(response, result);
-        }
-
-        return grpc::Status::OK;
-    }
-
     grpc::Status SetRateVelocityNed(
         grpc::ServerContext* /* context */,
         const rpc::telemetry::SetRateVelocityNedRequest* request,
@@ -3468,6 +3362,7 @@ public:
     void stop()
     {
         _stopped.store(true);
+        std::lock_guard<std::mutex> lock(_stream_stop_mutex);
         for (auto& prom : _stream_stop_promises) {
             if (auto handle = prom.lock()) {
                 handle->set_value();
@@ -3484,12 +3379,14 @@ private:
                 handle->set_value();
             }
         } else {
+            std::lock_guard<std::mutex> lock(_stream_stop_mutex);
             _stream_stop_promises.push_back(prom);
         }
     }
 
     void unregister_stream_stop_promise(std::shared_ptr<std::promise<void>> prom)
     {
+        std::lock_guard<std::mutex> lock(_stream_stop_mutex);
         for (auto it = _stream_stop_promises.begin(); it != _stream_stop_promises.end();
              /* ++it */) {
             if (it->lock() == prom) {
@@ -3503,6 +3400,7 @@ private:
     LazyPlugin& _lazy_plugin;
 
     std::atomic<bool> _stopped{false};
+    std::mutex _stream_stop_mutex{};
     std::vector<std::weak_ptr<std::promise<void>>> _stream_stop_promises{};
 };
 

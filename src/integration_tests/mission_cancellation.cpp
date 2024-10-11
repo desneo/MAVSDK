@@ -22,11 +22,11 @@ static Mission::MissionItem add_waypoint(
     float gimbal_yaw_deg,
     bool take_photo);
 
-TEST_F(SitlTest, PX4MissionUploadCancellation)
+TEST(SitlTest, PX4MissionUploadCancellation)
 {
-    Mavsdk mavsdk;
+    Mavsdk mavsdk{Mavsdk::Configuration{ComponentType::GroundStation}};
 
-    ConnectionResult ret = mavsdk.add_udp_connection();
+    ConnectionResult ret = mavsdk.add_any_connection("udpin://0.0.0.0:14540");
     ASSERT_EQ(ret, ConnectionResult::Success);
 
     // Wait for system to connect via heartbeat.
@@ -78,11 +78,11 @@ TEST_F(SitlTest, PX4MissionUploadCancellation)
     std::this_thread::sleep_for(std::chrono::seconds(5));
 }
 
-TEST_F(SitlTest, PX4MissionDownloadCancellation)
+TEST(SitlTest, PX4MissionDownloadCancellation)
 {
-    Mavsdk mavsdk;
+    Mavsdk mavsdk{Mavsdk::Configuration{ComponentType::GroundStation}};
 
-    ConnectionResult ret = mavsdk.add_udp_connection();
+    ConnectionResult ret = mavsdk.add_any_connection("udpin://0.0.0.0:14540");
     ASSERT_EQ(ret, ConnectionResult::Success);
 
     // Wait for system to connect via heartbeat.

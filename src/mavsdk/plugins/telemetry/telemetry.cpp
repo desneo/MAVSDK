@@ -188,38 +188,6 @@ Telemetry::AngularVelocityBody Telemetry::attitude_angular_velocity_body() const
     return _impl->attitude_angular_velocity_body();
 }
 
-Telemetry::CameraAttitudeQuaternionHandle
-Telemetry::subscribe_camera_attitude_quaternion(const CameraAttitudeQuaternionCallback& callback)
-{
-    return _impl->subscribe_camera_attitude_quaternion(callback);
-}
-
-void Telemetry::unsubscribe_camera_attitude_quaternion(CameraAttitudeQuaternionHandle handle)
-{
-    _impl->unsubscribe_camera_attitude_quaternion(handle);
-}
-
-Telemetry::Quaternion Telemetry::camera_attitude_quaternion() const
-{
-    return _impl->camera_attitude_quaternion();
-}
-
-Telemetry::CameraAttitudeEulerHandle
-Telemetry::subscribe_camera_attitude_euler(const CameraAttitudeEulerCallback& callback)
-{
-    return _impl->subscribe_camera_attitude_euler(callback);
-}
-
-void Telemetry::unsubscribe_camera_attitude_euler(CameraAttitudeEulerHandle handle)
-{
-    _impl->unsubscribe_camera_attitude_euler(handle);
-}
-
-Telemetry::EulerAngle Telemetry::camera_attitude_euler() const
-{
-    return _impl->camera_attitude_euler();
-}
-
 Telemetry::VelocityNedHandle Telemetry::subscribe_velocity_ned(const VelocityNedCallback& callback)
 {
     return _impl->subscribe_velocity_ned(callback);
@@ -640,16 +608,6 @@ void Telemetry::set_rate_attitude_euler_async(double rate_hz, const ResultCallba
 Telemetry::Result Telemetry::set_rate_attitude_euler(double rate_hz) const
 {
     return _impl->set_rate_attitude_euler(rate_hz);
-}
-
-void Telemetry::set_rate_camera_attitude_async(double rate_hz, const ResultCallback callback)
-{
-    _impl->set_rate_camera_attitude_async(rate_hz, callback);
-}
-
-Telemetry::Result Telemetry::set_rate_camera_attitude(double rate_hz) const
-{
-    return _impl->set_rate_camera_attitude(rate_hz);
 }
 
 void Telemetry::set_rate_velocity_ned_async(double rate_hz, const ResultCallback callback)
@@ -1236,7 +1194,8 @@ bool operator==(const Telemetry::DistanceSensor& lhs, const Telemetry::DistanceS
            ((std::isnan(rhs.maximum_distance_m) && std::isnan(lhs.maximum_distance_m)) ||
             rhs.maximum_distance_m == lhs.maximum_distance_m) &&
            ((std::isnan(rhs.current_distance_m) && std::isnan(lhs.current_distance_m)) ||
-            rhs.current_distance_m == lhs.current_distance_m);
+            rhs.current_distance_m == lhs.current_distance_m) &&
+           (rhs.orientation == lhs.orientation);
 }
 
 std::ostream& operator<<(std::ostream& str, Telemetry::DistanceSensor const& distance_sensor)
@@ -1246,6 +1205,7 @@ std::ostream& operator<<(std::ostream& str, Telemetry::DistanceSensor const& dis
     str << "    minimum_distance_m: " << distance_sensor.minimum_distance_m << '\n';
     str << "    maximum_distance_m: " << distance_sensor.maximum_distance_m << '\n';
     str << "    current_distance_m: " << distance_sensor.current_distance_m << '\n';
+    str << "    orientation: " << distance_sensor.orientation << '\n';
     str << '}';
     return str;
 }

@@ -1,7 +1,6 @@
 #include "mavlink_parameter_helper.h"
 #include "mavlink_parameter_client.h"
 #include "mavlink_message_handler.h"
-#include "timeout_handler.h"
 #include "system_impl.h"
 #include "plugin_base.h"
 #include <algorithm>
@@ -15,6 +14,7 @@ MavlinkParameterClient::MavlinkParameterClient(
     MavlinkMessageHandler& message_handler,
     TimeoutHandler& timeout_handler,
     TimeoutSCallback timeout_s_callback,
+    AutopilotCallback autopilot_callback,
     uint8_t target_system_id,
     uint8_t target_component_id,
     bool use_extended) :
@@ -22,6 +22,7 @@ MavlinkParameterClient::MavlinkParameterClient(
     _message_handler(message_handler),
     _timeout_handler(timeout_handler),
     _timeout_s_callback(std::move(timeout_s_callback)),
+    _autopilot_callback(std::move(autopilot_callback)),
     _target_system_id(target_system_id),
     _target_component_id(target_component_id),
     _use_extended(use_extended)
@@ -73,8 +74,7 @@ MavlinkParameterClient::set_param(const std::string& name, const ParamValue& val
 {
     auto prom = std::promise<Result>();
     auto res = prom.get_future();
-    set_param_async(
-        name, value, [&prom](Result result) { prom.set_value(result); }, this);
+    set_param_async(name, value, [&prom](Result result) { prom.set_value(result); }, this);
     return res.get();
 }
 
@@ -115,7 +115,7 @@ void MavlinkParameterClient::set_param_int_async(
 
     // PX4 only uses int32_t, so we can be sure and don't need to check the exact type first
     // by getting the param, or checking the cache.
-    if (_sender.autopilot() == Autopilot::Px4) {
+    if (_autopilot_callback() == Autopilot::Px4) {
         ParamValue value_to_set;
         value_to_set.set(static_cast<int32_t>(value));
         set_param_async(name, value_to_set, callback, cookie);
@@ -172,8 +172,7 @@ MavlinkParameterClient::set_param_int(const std::string& name, int32_t value)
 {
     auto prom = std::promise<Result>();
     auto res = prom.get_future();
-    set_param_int_async(
-        name, value, [&prom](Result result) { prom.set_value(result); }, this);
+    set_param_int_async(name, value, [&prom](Result result) { prom.set_value(result); }, this);
     return res.get();
 }
 
@@ -191,8 +190,7 @@ MavlinkParameterClient::set_param_float(const std::string& name, float value)
     auto prom = std::promise<Result>();
     auto res = prom.get_future();
 
-    set_param_float_async(
-        name, value, [&prom](Result result) { prom.set_value(result); }, this);
+    set_param_float_async(name, value, [&prom](Result result) { prom.set_value(result); }, this);
 
     return res.get();
 }
@@ -228,8 +226,7 @@ MavlinkParameterClient::set_param_custom(const std::string& name, const std::str
 {
     auto prom = std::promise<Result>();
     auto res = prom.get_future();
-    set_param_custom_async(
-        name, value, [&prom](Result result) { prom.set_value(result); }, this);
+    set_param_custom_async(name, value, [&prom](Result result) { prom.set_value(result); }, this);
     return res.get();
 }
 
@@ -282,6 +279,29 @@ void MavlinkParameterClient::get_param_async_typesafe(
         if (result == Result::Success) {
             if (value.is<T>()) {
                 callback(Result::Success, value.get<T>());
+            } else {
+                callback(Result::WrongType, {});
+            }
+        } else {
+            callback(result, {});
+        }
+    };
+    get_param_async(name, callback_future_result, cookie);
+}
+
+template<>
+void MavlinkParameterClient::get_param_async_typesafe(
+    const std::string& name, const GetParamTypesafeCallback<int32_t> callback, const void* cookie)
+{
+    // We need to delay the type checking until we get a response from the server.
+    GetParamAnyCallback callback_future_result = [callback](Result result, ParamValue value) {
+        if (result == Result::Success) {
+            if (value.is<int32_t>()) {
+                callback(Result::Success, value.get<int32_t>());
+            } else if (value.is<int16_t>()) {
+                callback(Result::Success, value.get<int16_t>());
+            } else if (value.is<int8_t>()) {
+                callback(Result::Success, value.get<int8_t>());
             } else {
                 callback(Result::WrongType, {});
             }
@@ -434,8 +454,8 @@ void MavlinkParameterClient::do_work()
                 }
                 work->already_requested = true;
                 // We want to get notified if a timeout happens
-                _timeout_handler.add(
-                    [this] { receive_timeout(); }, _timeout_s_callback(), &_timeout_cookie);
+                _timeout_cookie =
+                    _timeout_handler.add([this] { receive_timeout(); }, _timeout_s_callback());
             },
             [&](WorkItemGet& item) {
                 if (!send_get_param_message(item)) {
@@ -450,8 +470,8 @@ void MavlinkParameterClient::do_work()
                 }
                 work->already_requested = true;
                 // We want to get notified if a timeout happens
-                _timeout_handler.add(
-                    [this] { receive_timeout(); }, _timeout_s_callback(), &_timeout_cookie);
+                _timeout_cookie =
+                    _timeout_handler.add([this] { receive_timeout(); }, _timeout_s_callback());
             },
             [&](WorkItemGetAll& item) {
                 if (!send_request_list_message()) {
@@ -466,8 +486,8 @@ void MavlinkParameterClient::do_work()
                 }
                 work->already_requested = true;
                 // We want to get notified if a timeout happens
-                _timeout_handler.add(
-                    [this] { receive_timeout(); }, _timeout_s_callback(), &_timeout_cookie);
+                _timeout_cookie =
+                    _timeout_handler.add([this] { receive_timeout(); }, _timeout_s_callback());
             }},
         work->work_item_variant);
 }
@@ -499,7 +519,7 @@ bool MavlinkParameterClient::send_set_param_message(WorkItemSet& work_item)
             return message;
         });
     } else {
-        const float value_set = (_sender.autopilot() == Autopilot::ArduPilot) ?
+        const float value_set = (_autopilot_callback() == Autopilot::ArduPilot) ?
                                     work_item.param_value.get_4_float_bytes_cast() :
                                     work_item.param_value.get_4_float_bytes_bytewise();
 
@@ -632,8 +652,8 @@ void MavlinkParameterClient::process_param_value(const mavlink_message_t& messag
     ParamValue received_value;
     const bool set_value_success = received_value.set_from_mavlink_param_value(
         param_value,
-        (_sender.autopilot() == Autopilot::ArduPilot) ? ParamValue::Conversion::Cast :
-                                                        ParamValue::Conversion::Bitwise);
+        (_autopilot_callback() == Autopilot::ArduPilot) ? ParamValue::Conversion::Cast :
+                                                          ParamValue::Conversion::Bitwise);
     if (!set_value_success) {
         LogWarn() << "Got ill-formed param_ext_value message (param_type unknown)";
         return;
@@ -800,7 +820,7 @@ void MavlinkParameterClient::process_param_value(const mavlink_message_t& messag
                             } else {
                                 // update the timeout handler, messages are still coming in.
                             }
-                            _timeout_handler.refresh(&_timeout_cookie);
+                            _timeout_handler.refresh(_timeout_cookie);
                         }
                         break;
                     case MavlinkParameterCache::AddNewParamResult::TooManyParams:
@@ -906,7 +926,7 @@ void MavlinkParameterClient::process_param_ext_value(const mavlink_message_t& me
                                            << " but is " << param_ext_value.param_count;
                             }
                             // update the timeout handler, messages are still coming in.
-                            _timeout_handler.refresh(&_timeout_cookie);
+                            _timeout_handler.refresh(_timeout_cookie);
                         }
                         break;
                     case MavlinkParameterCache::AddNewParamResult::TooManyParams:
@@ -1036,8 +1056,8 @@ void MavlinkParameterClient::receive_timeout()
                         }
                     } else {
                         --work->retries_to_do;
-                        _timeout_handler.add(
-                            [this] { receive_timeout(); }, _timeout_s_callback(), &_timeout_cookie);
+                        _timeout_cookie = _timeout_handler.add(
+                            [this] { receive_timeout(); }, _timeout_s_callback());
                     }
                 } else {
                     // We have tried retransmitting, giving up now.
@@ -1064,8 +1084,8 @@ void MavlinkParameterClient::receive_timeout()
                         }
                     } else {
                         --work->retries_to_do;
-                        _timeout_handler.add(
-                            [this] { receive_timeout(); }, _timeout_s_callback(), &_timeout_cookie);
+                        _timeout_cookie = _timeout_handler.add(
+                            [this] { receive_timeout(); }, _timeout_s_callback());
                     }
                 } else {
                     // We have tried retransmitting, giving up now.
@@ -1104,8 +1124,8 @@ void MavlinkParameterClient::receive_timeout()
                         }
 
                         // We want to get notified if a timeout happens
-                        _timeout_handler.add(
-                            [this] { receive_timeout(); }, _timeout_s_callback(), &_timeout_cookie);
+                        _timeout_cookie = _timeout_handler.add(
+                            [this] { receive_timeout(); }, _timeout_s_callback());
                     } else {
                         if (item.callback) {
                             auto callback = item.callback;
@@ -1140,8 +1160,8 @@ void MavlinkParameterClient::receive_timeout()
                         }
                         return;
                     }
-                    _timeout_handler.add(
-                        [this] { receive_timeout(); }, _timeout_s_callback(), &_timeout_cookie);
+                    _timeout_cookie =
+                        _timeout_handler.add([this] { receive_timeout(); }, _timeout_s_callback());
                 }
             }},
         work->work_item_variant);

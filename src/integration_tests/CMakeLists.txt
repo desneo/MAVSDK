@@ -18,11 +18,11 @@ add_executable(integration_tests_runner
     camera_take_photo.cpp
     camera_take_photo_interval.cpp
     camera_format.cpp
+    camera_reset_settings.cpp
     camera_test_helpers.cpp
     connection.cpp
     follow_me.cpp
     geofence.cpp
-    gimbal.cpp
     info.cpp
     offboard_attitude.cpp
     #logging.cpp # Not fully implemented
@@ -58,26 +58,6 @@ target_include_directories(integration_tests_runner
     ${PROJECT_SOURCE_DIR}/mavsdk/core
 )
 
-# SYSTEM because we don't want warnings for gtest headers.
-target_include_directories(integration_tests_runner
-    SYSTEM
-    PRIVATE ${PROJECT_SOURCE_DIR}/third_party/gtest/googletest/include
-    PRIVATE ${PROJECT_SOURCE_DIR}/third_party/gtest/googlemock/include
-    PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/../third_party/include
-)
-
-if(MSVC)
-    target_compile_options(integration_tests_runner
-        PRIVATE
-         /wd4996 # ignore deprecated
-    )
-else()
-    target_compile_options(integration_tests_runner
-        PRIVATE
-        -Wno-error=deprecated-declarations
-    )
-endif()
-
 target_compile_definitions(integration_tests_runner
     PRIVATE
     "-DTESTING")
@@ -86,27 +66,17 @@ set_target_properties(integration_tests_runner
     PROPERTIES COMPILE_FLAGS ${warnings}
 )
 
+hunter_add_package(GTest)
+find_package(GTest REQUIRED)
+
 target_link_libraries(integration_tests_runner
     PRIVATE
     mavsdk
-    gtest
-    gtest_main
-    gmock
+    GTest::gtest
+    GTest::gtest_main
+    GTest::gmock
 )
 
 add_test(integration_tests
     integration_tests_runner
-)
-
-add_custom_command(TARGET integration_tests_runner
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/start_sitl.sh
-        ${CMAKE_CURRENT_BINARY_DIR}
-)
-add_custom_command(TARGET integration_tests_runner
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/stop_sitl.sh
-        ${CMAKE_CURRENT_BINARY_DIR}
 )

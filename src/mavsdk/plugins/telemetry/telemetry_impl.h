@@ -34,7 +34,6 @@ public:
     Telemetry::Result set_rate_vtol_state(double rate_hz);
     Telemetry::Result set_rate_attitude_quaternion(double rate_hz);
     Telemetry::Result set_rate_attitude_euler(double rate_hz);
-    Telemetry::Result set_rate_camera_attitude(double rate_hz);
     Telemetry::Result set_rate_velocity_ned(double rate_hz);
     Telemetry::Result set_rate_imu(double rate_hz);
     Telemetry::Result set_rate_scaled_imu(double rate_hz);
@@ -60,7 +59,6 @@ public:
     void set_rate_vtol_state_async(double rate_hz, Telemetry::ResultCallback callback);
     void set_rate_attitude_quaternion_async(double rate_hz, Telemetry::ResultCallback callback);
     void set_rate_attitude_euler_async(double rate_hz, Telemetry::ResultCallback callback);
-    void set_rate_camera_attitude_async(double rate_hz, Telemetry::ResultCallback callback);
     void set_rate_velocity_ned_async(double rate_hz, Telemetry::ResultCallback callback);
     void set_rate_imu_async(double rate_hz, Telemetry::ResultCallback callback);
     void set_rate_scaled_imu_async(double rate_hz, Telemetry::ResultCallback callback);
@@ -94,8 +92,6 @@ public:
     Telemetry::AngularVelocityBody attitude_angular_velocity_body() const;
     Telemetry::GroundTruth ground_truth() const;
     Telemetry::FixedwingMetrics fixedwing_metrics() const;
-    Telemetry::EulerAngle camera_attitude_euler() const;
-    Telemetry::Quaternion camera_attitude_quaternion() const;
     Telemetry::VelocityNed velocity_ned() const;
     Telemetry::Imu imu() const;
     Telemetry::Imu scaled_imu() const;
@@ -146,12 +142,6 @@ public:
     Telemetry::GroundTruthHandle
     subscribe_ground_truth(const Telemetry::GroundTruthCallback& callback);
     void unsubscribe_ground_truth(Telemetry::GroundTruthHandle handle);
-    Telemetry::AttitudeQuaternionHandle
-    subscribe_camera_attitude_quaternion(const Telemetry::AttitudeQuaternionCallback& callback);
-    void unsubscribe_camera_attitude_quaternion(Telemetry::AttitudeQuaternionHandle handle);
-    Telemetry::AttitudeEulerHandle
-    subscribe_camera_attitude_euler(const Telemetry::AttitudeEulerCallback& callback);
-    void unsubscribe_camera_attitude_euler(Telemetry::AttitudeEulerHandle handle);
     Telemetry::VelocityNedHandle
     subscribe_velocity_ned(const Telemetry::VelocityNedCallback& callback);
     void unsubscribe_velocity_ned(Telemetry::VelocityNedHandle handle);
@@ -217,10 +207,10 @@ private:
     void set_status_text(Telemetry::StatusText status_text);
     void set_armed(bool armed);
     void set_attitude_quaternion(Telemetry::Quaternion quaternion);
+    void set_attitude_euler(Telemetry::EulerAngle euler);
     void set_attitude_angular_velocity_body(Telemetry::AngularVelocityBody angular_velocity_body);
     void set_fixedwing_metrics(Telemetry::FixedwingMetrics fixedwing_metrics);
     void set_ground_truth(Telemetry::GroundTruth ground_truth);
-    void set_camera_attitude_euler_angle(Telemetry::EulerAngle euler_angle);
     void set_velocity_ned(Telemetry::VelocityNed velocity_ned);
     void set_imu_reading_ned(Telemetry::Imu imu);
     void set_scaled_imu(Telemetry::Imu imu);
@@ -250,8 +240,6 @@ private:
     void process_home_position(const mavlink_message_t& message);
     void process_attitude(const mavlink_message_t& message);
     void process_attitude_quaternion(const mavlink_message_t& message);
-    void process_gimbal_device_attitude_status(const mavlink_message_t& message);
-    void process_mount_orientation(const mavlink_message_t& message);
     void process_imu_reading_ned(const mavlink_message_t& message);
     void process_scaled_imu(const mavlink_message_t& message);
     void process_raw_imu(const mavlink_message_t& message);
@@ -270,33 +258,10 @@ private:
     void process_distance_sensor(const mavlink_message_t& message);
     void process_scaled_pressure(const mavlink_message_t& message);
     void process_altitude(const mavlink_message_t& message);
-    void receive_param_cal_gyro(MavlinkParameterClient::Result result, int value);
-    void receive_param_cal_accel(MavlinkParameterClient::Result result, int value);
-    void receive_param_cal_mag(MavlinkParameterClient::Result result, int value);
-
-    // Ardupilot sensor offset callbacks.
-    void receive_param_cal_gyro_offset_x(MavlinkParameterClient::Result result, float value);
-    void receive_param_cal_gyro_offset_y(MavlinkParameterClient::Result result, float value);
-    void receive_param_cal_gyro_offset_z(MavlinkParameterClient::Result result, float value);
-    void receive_param_cal_accel_offset_x(MavlinkParameterClient::Result result, float value);
-    void receive_param_cal_accel_offset_y(MavlinkParameterClient::Result result, float value);
-    void receive_param_cal_accel_offset_z(MavlinkParameterClient::Result result, float value);
-    void receive_param_cal_mag_offset_x(MavlinkParameterClient::Result result, float value);
-    void receive_param_cal_mag_offset_y(MavlinkParameterClient::Result result, float value);
-    void receive_param_cal_mag_offset_z(MavlinkParameterClient::Result result, float value);
-
-    void process_parameter_update(const std::string& name);
-    void receive_param_hitl(MavlinkParameterClient::Result result, int value);
-
-    void receive_rc_channels_timeout();
-    void receive_gps_raw_timeout();
-    void receive_unix_epoch_timeout();
 
     void receive_statustext(const MavlinkStatustextHandler::Statustext&);
 
-    void request_home_position_async();
     void request_home_position_again();
-    void check_calibration();
 
     static bool sys_status_present_enabled_health(
         const mavlink_sys_status_t& sys_status, MAV_SYS_STATUS_SENSOR flag);
@@ -337,8 +302,8 @@ private:
     mutable std::mutex _attitude_quaternion_mutex{};
     Telemetry::Quaternion _attitude_quaternion{};
 
-    mutable std::mutex _camera_attitude_euler_angle_mutex{};
-    Telemetry::EulerAngle _camera_attitude_euler_angle{};
+    mutable std::mutex _attitude_euler_mutex{};
+    Telemetry::EulerAngle _attitude_euler{};
 
     mutable std::mutex _attitude_angular_velocity_body_mutex{};
     Telemetry::AngularVelocityBody _attitude_angular_velocity_body{};
@@ -403,10 +368,6 @@ private:
     mutable std::mutex _altitude_mutex{};
     Telemetry::Altitude _altitude{};
 
-    mutable std::mutex _request_home_position_mutex{};
-
-    std::atomic<bool> _hitl_enabled{false};
-
     std::mutex _subscription_mutex{};
     CallbackList<Telemetry::PositionVelocityNed> _position_velocity_ned_subscriptions{};
     CallbackList<Telemetry::Position> _position_subscriptions{};
@@ -419,8 +380,6 @@ private:
     CallbackList<Telemetry::GroundTruth> _ground_truth_subscriptions{};
     CallbackList<Telemetry::FixedwingMetrics> _fixedwing_metrics_subscriptions{};
     CallbackList<Telemetry::EulerAngle> _attitude_euler_angle_subscriptions{};
-    CallbackList<Telemetry::Quaternion> _camera_attitude_quaternion_subscriptions{};
-    CallbackList<Telemetry::EulerAngle> _camera_attitude_euler_angle_subscriptions{};
     CallbackList<Telemetry::VelocityNed> _velocity_ned_subscriptions{};
     CallbackList<Telemetry::Imu> _imu_reading_ned_subscriptions{};
     CallbackList<Telemetry::Imu> _scaled_imu_subscriptions{};
@@ -448,51 +407,58 @@ private:
     double _velocity_ned_rate_hz{0.0};
     double _position_rate_hz{-1.0};
 
-    void* _rc_channels_timeout_cookie{nullptr};
-    void* _gps_raw_timeout_cookie{nullptr};
-    void* _unix_epoch_timeout_cookie{nullptr};
-
     // Battery info can be extracted from SYS_STATUS or from BATTERY_STATUS.
     // If no BATTERY_STATUS messages are received, use info from SYS_STATUS.
     bool _has_bat_status{false};
 
-    void* _calibration_cookie{nullptr};
-    void* _homepos_cookie{nullptr};
+    CallEveryHandler::Cookie _homepos_cookie{};
 
-    std::atomic<bool> _has_received_hitl_param{false};
+    Telemetry::EulerAngle extractOrientation(mavlink_distance_sensor_t distance_sensor_msg);
 
-    std::atomic<bool> _has_received_gyro_calibration{false};
-    std::atomic<bool> _has_received_accel_calibration{false};
-    std::atomic<bool> _has_received_mag_calibration{false};
-
-    std::mutex _ap_calibration_mutex{};
-    struct ArdupilotCalibration {
-        struct OffsetStatus {
-            std::optional<float> x{};
-            std::optional<float> y{};
-            std::optional<float> z{};
-
-            [[nodiscard]] bool received_all() const
-            {
-                return x.has_value() && y.has_value() && z.has_value();
-            }
-            [[nodiscard]] bool calibrated() const
-            {
-                return received_all() && ((x.value() != 0) && (y.value() != 0) && (z.value() != 0));
-            }
-        };
-
-        OffsetStatus mag_offset;
-        OffsetStatus accel_offset;
-        OffsetStatus gyro_offset;
-
-    } _ap_calibration{};
-
-    enum class SysStatusUsed {
-        Unknown,
-        Yes,
-        No,
+    enum class MavSensorOrientation {
+        MAV_SENSOR_ROTATION_NONE = 0, // Roll: 0, Pitch: 0, Yaw: 0
+        MAV_SENSOR_ROTATION_YAW_45, // Roll: 0, Pitch: 0, Yaw: 45
+        MAV_SENSOR_ROTATION_YAW_90, // Roll: 0, Pitch: 0, Yaw: 90
+        MAV_SENSOR_ROTATION_YAW_135, // Roll: 0, Pitch: 0, Yaw: 135
+        MAV_SENSOR_ROTATION_YAW_180, // Roll: 0, Pitch: 0, Yaw: 180
+        MAV_SENSOR_ROTATION_YAW_225, // Roll: 0, Pitch: 0, Yaw: 225
+        MAV_SENSOR_ROTATION_YAW_270, // Roll: 0, Pitch: 0, Yaw: 270
+        MAV_SENSOR_ROTATION_YAW_315, // Roll: 0, Pitch: 0, Yaw: 315
+        MAV_SENSOR_ROTATION_ROLL_180, // Roll: 180, Pitch: 0, Yaw: 0
+        MAV_SENSOR_ROTATION_ROLL_180_YAW_45, // Roll: 180, Pitch: 0, Yaw: 45
+        MAV_SENSOR_ROTATION_ROLL_180_YAW_90, // Roll: 180, Pitch: 0, Yaw: 90
+        MAV_SENSOR_ROTATION_ROLL_180_YAW_135, // Roll: 180, Pitch: 0, Yaw: 135
+        MAV_SENSOR_ROTATION_PITCH_180, // Roll: 0, Pitch: 180, Yaw: 0
+        MAV_SENSOR_ROTATION_ROLL_180_YAW_225, // Roll: 180, Pitch: 0, Yaw: 225
+        MAV_SENSOR_ROTATION_ROLL_180_YAW_270, // Roll: 180, Pitch: 0, Yaw: 270
+        MAV_SENSOR_ROTATION_ROLL_180_YAW_315, // Roll: 180, Pitch: 0, Yaw: 315
+        MAV_SENSOR_ROTATION_ROLL_90, // Roll: 90, Pitch: 0, Yaw: 0
+        MAV_SENSOR_ROTATION_ROLL_90_YAW_45, // Roll: 90, Pitch: 0, Yaw: 45
+        MAV_SENSOR_ROTATION_ROLL_90_YAW_90, // Roll: 90, Pitch: 0, Yaw: 90
+        MAV_SENSOR_ROTATION_ROLL_90_YAW_135, // Roll: 90, Pitch: 0, Yaw: 135
+        MAV_SENSOR_ROTATION_ROLL_270, // Roll: 270, Pitch: 0, Yaw: 0
+        MAV_SENSOR_ROTATION_ROLL_270_YAW_45, // Roll: 270, Pitch: 0, Yaw: 45
+        MAV_SENSOR_ROTATION_ROLL_270_YAW_90, // Roll: 270, Pitch: 0, Yaw: 90
+        MAV_SENSOR_ROTATION_ROLL_270_YAW_135, // Roll: 270, Pitch: 0, Yaw: 135
+        MAV_SENSOR_ROTATION_PITCH_90, // Roll: 0, Pitch: 90, Yaw: 0
+        MAV_SENSOR_ROTATION_PITCH_270, // Roll: 0, Pitch: 270, Yaw: 0
+        MAV_SENSOR_ROTATION_PITCH_180_YAW_90, // Roll: 0, Pitch: 180, Yaw: 90
+        MAV_SENSOR_ROTATION_PITCH_180_YAW_270, // Roll: 0, Pitch: 180, Yaw: 270
+        MAV_SENSOR_ROTATION_ROLL_90_PITCH_90, // Roll: 90, Pitch: 90, Yaw: 0
+        MAV_SENSOR_ROTATION_ROLL_180_PITCH_90, // Roll: 180, Pitch: 90, Yaw: 0
+        MAV_SENSOR_ROTATION_ROLL_270_PITCH_90, // Roll: 270, Pitch: 90, Yaw: 0
+        MAV_SENSOR_ROTATION_ROLL_90_PITCH_180, // Roll: 90, Pitch: 180, Yaw: 0
+        MAV_SENSOR_ROTATION_ROLL_270_PITCH_180, // Roll: 270, Pitch: 180, Yaw: 0
+        MAV_SENSOR_ROTATION_ROLL_90_PITCH_270, // Roll: 90, Pitch: 270, Yaw: 0
+        MAV_SENSOR_ROTATION_ROLL_180_PITCH_270, // Roll: 180, Pitch: 270, Yaw: 0
+        MAV_SENSOR_ROTATION_ROLL_270_PITCH_270, // Roll: 270, Pitch: 270, Yaw: 0
+        MAV_SENSOR_ROTATION_ROLL_90_PITCH_180_YAW_90, // Roll: 90, Pitch: 180, Yaw: 90
+        MAV_SENSOR_ROTATION_ROLL_90_YAW_270, // Roll: 90, Pitch: 0, Yaw: 270
+        MAV_SENSOR_ROTATION_ROLL_90_PITCH_68_YAW_293, // Roll: 90, Pitch: 68, Yaw: 293
+        MAV_SENSOR_ROTATION_PITCH_315, // Pitch: 315
+        MAV_SENSOR_ROTATION_ROLL_90_PITCH_315, // Roll: 90, Pitch: 315
+        MAV_SENSOR_ROTATION_CUSTOM =
+            100, // Custom orientation will be set as Roll: -1, Pitch: -1, Yaw: -1
     };
-    std::atomic<SysStatusUsed> _sys_status_used_for_position{SysStatusUsed::Unknown};
 };
 } // namespace mavsdk

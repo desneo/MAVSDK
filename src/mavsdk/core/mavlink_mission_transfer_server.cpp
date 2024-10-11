@@ -145,7 +145,7 @@ void MavlinkMissionTransferServer::ReceiveIncomingMission::start()
 
     _started = true;
     _retries_done = 0;
-    _timeout_handler.add([this]() { process_timeout(); }, _timeout_s, &_cookie);
+    _cookie = _timeout_handler.add([this]() { process_timeout(); }, _timeout_s);
     process_mission_count();
 }
 
@@ -192,7 +192,8 @@ void MavlinkMissionTransferServer::ReceiveIncomingMission::send_ack_and_finish()
                 _target_system_id,
                 _target_component_id,
                 MAV_MISSION_ACCEPTED,
-                _type);
+                _type,
+                0);
             return message;
         })) {
         callback_and_reset(Result::ConnectionError);
@@ -215,7 +216,8 @@ void MavlinkMissionTransferServer::ReceiveIncomingMission::send_cancel_and_finis
                 _target_system_id,
                 _target_component_id,
                 MAV_MISSION_OPERATION_CANCELLED,
-                _type);
+                _type,
+                0);
             return message;
         })) {
         callback_and_reset(Result::ConnectionError);
@@ -286,7 +288,7 @@ void MavlinkMissionTransferServer::ReceiveIncomingMission::process_timeout()
         return;
     }
 
-    _timeout_handler.add([this]() { process_timeout(); }, _timeout_s, &_cookie);
+    _cookie = _timeout_handler.add([this]() { process_timeout(); }, _timeout_s);
     request_item();
 }
 

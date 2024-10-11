@@ -14,20 +14,24 @@ configure_file(include/mavsdk/mavlink_include.h.in include/mavsdk/mavlink_includ
 
 target_sources(mavsdk
     PRIVATE
+    base64.cpp
     call_every_handler.cpp
     connection.cpp
     connection_result.cpp
-    curl_wrapper.cpp
     crc32.cpp
     system.cpp
     system_impl.cpp
+    file_cache.cpp
     flight_mode.cpp
+    fs_utils.cpp
+    inflate_lzma.cpp
+    math_conversions.cpp
     mavsdk.cpp
     mavsdk_impl.cpp
-    http_loader.cpp
     mavlink_channels.cpp
     mavlink_command_receiver.cpp
     mavlink_command_sender.cpp
+    mavlink_component_metadata.cpp
     mavlink_ftp_client.cpp
     mavlink_ftp_server.cpp
     mavlink_mission_transfer_client.cpp
@@ -38,6 +42,7 @@ target_sources(mavsdk
     mavlink_parameter_subscription.cpp
     mavlink_parameter_helper.cpp
     mavlink_receiver.cpp
+    mavlink_request_message.cpp
     mavlink_request_message_handler.cpp
     mavlink_statustext_handler.cpp
     mavlink_message_handler.cpp
@@ -48,13 +53,14 @@ target_sources(mavsdk
     server_component.cpp
     server_component_impl.cpp
     server_plugin_impl_base.cpp
-    tcp_connection.cpp
+    socket_holder.cpp
+    tcp_client_connection.cpp
+    tcp_server_connection.cpp
     timeout_handler.cpp
     udp_connection.cpp
     log.cpp
     cli_arg.cpp
     geometry.cpp
-    request_message.cpp
     mavsdk_time.cpp
     timesync.cpp
 )
@@ -62,10 +68,33 @@ target_sources(mavsdk
 cmake_policy(SET CMP0079 NEW)
 target_link_libraries(mavsdk
     PRIVATE
-    MAVLink::mavlink
-    CURL::libcurl
     Threads::Threads
+    LibLZMA::LibLZMA
 )
+
+if (NOT BUILD_WITHOUT_CURL)
+    target_sources(mavsdk
+        PRIVATE
+        curl_wrapper.cpp
+        http_loader.cpp
+    )
+
+    target_link_libraries(mavsdk
+        PRIVATE
+        CURL::libcurl
+    )
+
+    list(APPEND UNIT_TEST_SOURCES
+        # TODO: add this again
+        ${PROJECT_SOURCE_DIR}/mavsdk/core/curl_test.cpp
+        #${PROJECT_SOURCE_DIR}/mavsdk/core/http_loader_test.cpp
+    )
+else()
+    target_compile_definitions(mavsdk
+        PRIVATE
+        BUILD_WITHOUT_CURL=1
+    )
+endif()
 
 set_target_properties(mavsdk PROPERTIES
     VERSION ${MAVSDK_VERSION_STRING}
@@ -101,7 +130,7 @@ if(ANDROID)
 endif()
 
 if((BUILD_STATIC_MAVSDK_SERVER AND ("${CMAKE_C_COMPILER_ID}" STREQUAL "GNU")) OR
-    (${CMAKE_HOST_SYSTEM_PROCESSOR} MATCHES "(armv6|armv7)"))
+    (${CMAKE_HOST_SYSTEM_PROCESSOR} MATCHES "(armv6|armv7|aarch64)"))
     target_link_libraries(mavsdk PRIVATE atomic)
 endif()
 
@@ -128,6 +157,9 @@ install(TARGETS mavsdk
     )
 
 install(FILES
+    include/mavsdk/autopilot.h
+    include/mavsdk/base64.h
+    include/mavsdk/component_type.h
     include/mavsdk/connection_result.h
     include/mavsdk/deprecated.h
     include/mavsdk/handle.h
@@ -151,15 +183,15 @@ list(APPEND UNIT_TEST_SOURCES
     ${PROJECT_SOURCE_DIR}/mavsdk/core/callback_list_test.cpp
     ${PROJECT_SOURCE_DIR}/mavsdk/core/call_every_handler_test.cpp
     ${PROJECT_SOURCE_DIR}/mavsdk/core/cli_arg_test.cpp
-    ${PROJECT_SOURCE_DIR}/mavsdk/core/curl_test.cpp
+    ${PROJECT_SOURCE_DIR}/mavsdk/core/file_cache_test.cpp
     ${PROJECT_SOURCE_DIR}/mavsdk/core/locked_queue_test.cpp
     ${PROJECT_SOURCE_DIR}/mavsdk/core/geometry_test.cpp
-    # TODO: add this again
-    #${PROJECT_SOURCE_DIR}/mavsdk/core/http_loader_test.cpp
+    ${PROJECT_SOURCE_DIR}/mavsdk/core/math_conversions_test.cpp
     ${PROJECT_SOURCE_DIR}/mavsdk/core/mavsdk_math_test.cpp
     ${PROJECT_SOURCE_DIR}/mavsdk/core/mavsdk_test.cpp
     ${PROJECT_SOURCE_DIR}/mavsdk/core/mavsdk_time_test.cpp
     ${PROJECT_SOURCE_DIR}/mavsdk/core/mavlink_channels_test.cpp
+    ${PROJECT_SOURCE_DIR}/mavsdk/core/mavlink_component_metadata_test.cpp
     ${PROJECT_SOURCE_DIR}/mavsdk/core/mavlink_mission_transfer_client_test.cpp
     ${PROJECT_SOURCE_DIR}/mavsdk/core/mavlink_mission_transfer_server_test.cpp
     ${PROJECT_SOURCE_DIR}/mavsdk/core/mavlink_statustext_handler_test.cpp

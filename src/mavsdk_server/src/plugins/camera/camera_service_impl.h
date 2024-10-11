@@ -15,6 +15,7 @@
 #include <future>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <sstream>
 #include <vector>
 
@@ -857,7 +858,7 @@ public:
 
     grpc::Status StartVideoStreaming(
         grpc::ServerContext* /* context */,
-        const rpc::camera::StartVideoStreamingRequest* /* request */,
+        const rpc::camera::StartVideoStreamingRequest* request,
         rpc::camera::StartVideoStreamingResponse* response) override
     {
         if (_lazy_plugin.maybe_plugin() == nullptr) {
@@ -869,7 +870,12 @@ public:
             return grpc::Status::OK;
         }
 
-        auto result = _lazy_plugin.maybe_plugin()->start_video_streaming();
+        if (request == nullptr) {
+            LogWarn() << "StartVideoStreaming sent with a null request! Ignoring...";
+            return grpc::Status::OK;
+        }
+
+        auto result = _lazy_plugin.maybe_plugin()->start_video_streaming(request->stream_id());
 
         if (response != nullptr) {
             fillResponseWithResult(response, result);
@@ -880,7 +886,7 @@ public:
 
     grpc::Status StopVideoStreaming(
         grpc::ServerContext* /* context */,
-        const rpc::camera::StopVideoStreamingRequest* /* request */,
+        const rpc::camera::StopVideoStreamingRequest* request,
         rpc::camera::StopVideoStreamingResponse* response) override
     {
         if (_lazy_plugin.maybe_plugin() == nullptr) {
@@ -892,7 +898,12 @@ public:
             return grpc::Status::OK;
         }
 
-        auto result = _lazy_plugin.maybe_plugin()->stop_video_streaming();
+        if (request == nullptr) {
+            LogWarn() << "StopVideoStreaming sent with a null request! Ignoring...";
+            return grpc::Status::OK;
+        }
+
+        auto result = _lazy_plugin.maybe_plugin()->stop_video_streaming(request->stream_id());
 
         if (response != nullptr) {
             fillResponseWithResult(response, result);
@@ -1319,7 +1330,7 @@ public:
 
     grpc::Status FormatStorage(
         grpc::ServerContext* /* context */,
-        const rpc::camera::FormatStorageRequest* /* request */,
+        const rpc::camera::FormatStorageRequest* request,
         rpc::camera::FormatStorageResponse* response) override
     {
         if (_lazy_plugin.maybe_plugin() == nullptr) {
@@ -1331,7 +1342,12 @@ public:
             return grpc::Status::OK;
         }
 
-        auto result = _lazy_plugin.maybe_plugin()->format_storage();
+        if (request == nullptr) {
+            LogWarn() << "FormatStorage sent with a null request! Ignoring...";
+            return grpc::Status::OK;
+        }
+
+        auto result = _lazy_plugin.maybe_plugin()->format_storage(request->storage_id());
 
         if (response != nullptr) {
             fillResponseWithResult(response, result);
@@ -1368,9 +1384,311 @@ public:
         return grpc::Status::OK;
     }
 
+    grpc::Status ResetSettings(
+        grpc::ServerContext* /* context */,
+        const rpc::camera::ResetSettingsRequest* /* request */,
+        rpc::camera::ResetSettingsResponse* response) override
+    {
+        if (_lazy_plugin.maybe_plugin() == nullptr) {
+            if (response != nullptr) {
+                auto result = mavsdk::Camera::Result::NoSystem;
+                fillResponseWithResult(response, result);
+            }
+
+            return grpc::Status::OK;
+        }
+
+        auto result = _lazy_plugin.maybe_plugin()->reset_settings();
+
+        if (response != nullptr) {
+            fillResponseWithResult(response, result);
+        }
+
+        return grpc::Status::OK;
+    }
+
+    grpc::Status ZoomInStart(
+        grpc::ServerContext* /* context */,
+        const rpc::camera::ZoomInStartRequest* /* request */,
+        rpc::camera::ZoomInStartResponse* response) override
+    {
+        if (_lazy_plugin.maybe_plugin() == nullptr) {
+            if (response != nullptr) {
+                auto result = mavsdk::Camera::Result::NoSystem;
+                fillResponseWithResult(response, result);
+            }
+
+            return grpc::Status::OK;
+        }
+
+        auto result = _lazy_plugin.maybe_plugin()->zoom_in_start();
+
+        if (response != nullptr) {
+            fillResponseWithResult(response, result);
+        }
+
+        return grpc::Status::OK;
+    }
+
+    grpc::Status ZoomOutStart(
+        grpc::ServerContext* /* context */,
+        const rpc::camera::ZoomOutStartRequest* /* request */,
+        rpc::camera::ZoomOutStartResponse* response) override
+    {
+        if (_lazy_plugin.maybe_plugin() == nullptr) {
+            if (response != nullptr) {
+                auto result = mavsdk::Camera::Result::NoSystem;
+                fillResponseWithResult(response, result);
+            }
+
+            return grpc::Status::OK;
+        }
+
+        auto result = _lazy_plugin.maybe_plugin()->zoom_out_start();
+
+        if (response != nullptr) {
+            fillResponseWithResult(response, result);
+        }
+
+        return grpc::Status::OK;
+    }
+
+    grpc::Status ZoomStop(
+        grpc::ServerContext* /* context */,
+        const rpc::camera::ZoomStopRequest* /* request */,
+        rpc::camera::ZoomStopResponse* response) override
+    {
+        if (_lazy_plugin.maybe_plugin() == nullptr) {
+            if (response != nullptr) {
+                auto result = mavsdk::Camera::Result::NoSystem;
+                fillResponseWithResult(response, result);
+            }
+
+            return grpc::Status::OK;
+        }
+
+        auto result = _lazy_plugin.maybe_plugin()->zoom_stop();
+
+        if (response != nullptr) {
+            fillResponseWithResult(response, result);
+        }
+
+        return grpc::Status::OK;
+    }
+
+    grpc::Status ZoomRange(
+        grpc::ServerContext* /* context */,
+        const rpc::camera::ZoomRangeRequest* request,
+        rpc::camera::ZoomRangeResponse* response) override
+    {
+        if (_lazy_plugin.maybe_plugin() == nullptr) {
+            if (response != nullptr) {
+                auto result = mavsdk::Camera::Result::NoSystem;
+                fillResponseWithResult(response, result);
+            }
+
+            return grpc::Status::OK;
+        }
+
+        if (request == nullptr) {
+            LogWarn() << "ZoomRange sent with a null request! Ignoring...";
+            return grpc::Status::OK;
+        }
+
+        auto result = _lazy_plugin.maybe_plugin()->zoom_range(request->range());
+
+        if (response != nullptr) {
+            fillResponseWithResult(response, result);
+        }
+
+        return grpc::Status::OK;
+    }
+
+    grpc::Status TrackPoint(
+        grpc::ServerContext* /* context */,
+        const rpc::camera::TrackPointRequest* request,
+        rpc::camera::TrackPointResponse* response) override
+    {
+        if (_lazy_plugin.maybe_plugin() == nullptr) {
+            if (response != nullptr) {
+                auto result = mavsdk::Camera::Result::NoSystem;
+                fillResponseWithResult(response, result);
+            }
+
+            return grpc::Status::OK;
+        }
+
+        if (request == nullptr) {
+            LogWarn() << "TrackPoint sent with a null request! Ignoring...";
+            return grpc::Status::OK;
+        }
+
+        auto result = _lazy_plugin.maybe_plugin()->track_point(
+            request->point_x(), request->point_y(), request->radius());
+
+        if (response != nullptr) {
+            fillResponseWithResult(response, result);
+        }
+
+        return grpc::Status::OK;
+    }
+
+    grpc::Status TrackRectangle(
+        grpc::ServerContext* /* context */,
+        const rpc::camera::TrackRectangleRequest* request,
+        rpc::camera::TrackRectangleResponse* response) override
+    {
+        if (_lazy_plugin.maybe_plugin() == nullptr) {
+            if (response != nullptr) {
+                auto result = mavsdk::Camera::Result::NoSystem;
+                fillResponseWithResult(response, result);
+            }
+
+            return grpc::Status::OK;
+        }
+
+        if (request == nullptr) {
+            LogWarn() << "TrackRectangle sent with a null request! Ignoring...";
+            return grpc::Status::OK;
+        }
+
+        auto result = _lazy_plugin.maybe_plugin()->track_rectangle(
+            request->top_left_x(),
+            request->top_left_y(),
+            request->bottom_right_x(),
+            request->bottom_right_y());
+
+        if (response != nullptr) {
+            fillResponseWithResult(response, result);
+        }
+
+        return grpc::Status::OK;
+    }
+
+    grpc::Status TrackStop(
+        grpc::ServerContext* /* context */,
+        const rpc::camera::TrackStopRequest* /* request */,
+        rpc::camera::TrackStopResponse* response) override
+    {
+        if (_lazy_plugin.maybe_plugin() == nullptr) {
+            if (response != nullptr) {
+                auto result = mavsdk::Camera::Result::NoSystem;
+                fillResponseWithResult(response, result);
+            }
+
+            return grpc::Status::OK;
+        }
+
+        auto result = _lazy_plugin.maybe_plugin()->track_stop();
+
+        if (response != nullptr) {
+            fillResponseWithResult(response, result);
+        }
+
+        return grpc::Status::OK;
+    }
+
+    grpc::Status FocusInStart(
+        grpc::ServerContext* /* context */,
+        const rpc::camera::FocusInStartRequest* /* request */,
+        rpc::camera::FocusInStartResponse* response) override
+    {
+        if (_lazy_plugin.maybe_plugin() == nullptr) {
+            if (response != nullptr) {
+                auto result = mavsdk::Camera::Result::NoSystem;
+                fillResponseWithResult(response, result);
+            }
+
+            return grpc::Status::OK;
+        }
+
+        auto result = _lazy_plugin.maybe_plugin()->focus_in_start();
+
+        if (response != nullptr) {
+            fillResponseWithResult(response, result);
+        }
+
+        return grpc::Status::OK;
+    }
+
+    grpc::Status FocusOutStart(
+        grpc::ServerContext* /* context */,
+        const rpc::camera::FocusOutStartRequest* /* request */,
+        rpc::camera::FocusOutStartResponse* response) override
+    {
+        if (_lazy_plugin.maybe_plugin() == nullptr) {
+            if (response != nullptr) {
+                auto result = mavsdk::Camera::Result::NoSystem;
+                fillResponseWithResult(response, result);
+            }
+
+            return grpc::Status::OK;
+        }
+
+        auto result = _lazy_plugin.maybe_plugin()->focus_out_start();
+
+        if (response != nullptr) {
+            fillResponseWithResult(response, result);
+        }
+
+        return grpc::Status::OK;
+    }
+
+    grpc::Status FocusStop(
+        grpc::ServerContext* /* context */,
+        const rpc::camera::FocusStopRequest* /* request */,
+        rpc::camera::FocusStopResponse* response) override
+    {
+        if (_lazy_plugin.maybe_plugin() == nullptr) {
+            if (response != nullptr) {
+                auto result = mavsdk::Camera::Result::NoSystem;
+                fillResponseWithResult(response, result);
+            }
+
+            return grpc::Status::OK;
+        }
+
+        auto result = _lazy_plugin.maybe_plugin()->focus_stop();
+
+        if (response != nullptr) {
+            fillResponseWithResult(response, result);
+        }
+
+        return grpc::Status::OK;
+    }
+
+    grpc::Status FocusRange(
+        grpc::ServerContext* /* context */,
+        const rpc::camera::FocusRangeRequest* request,
+        rpc::camera::FocusRangeResponse* response) override
+    {
+        if (_lazy_plugin.maybe_plugin() == nullptr) {
+            if (response != nullptr) {
+                auto result = mavsdk::Camera::Result::NoSystem;
+                fillResponseWithResult(response, result);
+            }
+
+            return grpc::Status::OK;
+        }
+
+        if (request == nullptr) {
+            LogWarn() << "FocusRange sent with a null request! Ignoring...";
+            return grpc::Status::OK;
+        }
+
+        auto result = _lazy_plugin.maybe_plugin()->focus_range(request->range());
+
+        if (response != nullptr) {
+            fillResponseWithResult(response, result);
+        }
+
+        return grpc::Status::OK;
+    }
+
     void stop()
     {
         _stopped.store(true);
+        std::lock_guard<std::mutex> lock(_stream_stop_mutex);
         for (auto& prom : _stream_stop_promises) {
             if (auto handle = prom.lock()) {
                 handle->set_value();
@@ -1387,12 +1705,14 @@ private:
                 handle->set_value();
             }
         } else {
+            std::lock_guard<std::mutex> lock(_stream_stop_mutex);
             _stream_stop_promises.push_back(prom);
         }
     }
 
     void unregister_stream_stop_promise(std::shared_ptr<std::promise<void>> prom)
     {
+        std::lock_guard<std::mutex> lock(_stream_stop_mutex);
         for (auto it = _stream_stop_promises.begin(); it != _stream_stop_promises.end();
              /* ++it */) {
             if (it->lock() == prom) {
@@ -1406,6 +1726,7 @@ private:
     LazyPlugin& _lazy_plugin;
 
     std::atomic<bool> _stopped{false};
+    std::mutex _stream_stop_mutex{};
     std::vector<std::weak_ptr<std::promise<void>>> _stream_stop_promises{};
 };
 

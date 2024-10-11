@@ -55,21 +55,18 @@ Mission::MissionItem make_mission_item(
 
 int main(int argc, char** argv)
 {
-    // We run the server plugins on a seperate thead so we can use the main
+    // We run the server plugins on a seperate thread so we can use the main
     // thread as a ground station.
     std::thread autopilotThread([]() {
-        mavsdk::Mavsdk mavsdkTester;
-        mavsdk::Mavsdk::Configuration configuration(
-            mavsdk::Mavsdk::Configuration::UsageType::Autopilot);
-        mavsdkTester.set_configuration(configuration);
+        mavsdk::Mavsdk mavsdkTester{
+            mavsdk::Mavsdk::Configuration{mavsdk::ComponentType::Autopilot}};
 
         auto result = mavsdkTester.add_any_connection("udp://127.0.0.1:14551");
         if (result == mavsdk::ConnectionResult::Success) {
             std::cout << "Connected autopilot server side!" << std::endl;
         }
 
-        auto server_component =
-            mavsdkTester.server_component_by_type(Mavsdk::ServerComponentType::Autopilot);
+        auto server_component = mavsdkTester.server_component();
 
         // Create server plugins
         auto paramServer = mavsdk::ParamServer{server_component};
@@ -89,6 +86,19 @@ int main(int argc, char** argv)
         actionServer.set_allowable_flight_modes({true, true, true});
         actionServer.set_allow_takeoff(true);
         actionServer.set_armable(true, true);
+
+        // Create vehicle telemetry info
+        TelemetryServer::Position position{55.953251, -3.188267, 0, 0};
+        TelemetryServer::PositionVelocityNed positionVelocityNed{{0, 0, 0}, {0, 0, 0}};
+        TelemetryServer::VelocityNed velocity{};
+        TelemetryServer::Heading heading{60};
+        TelemetryServer::RawGps rawGps{
+            0, 55.953251, -3.188267, 0, NAN, NAN, 0, NAN, 0, 0, 0, 0, 0, 0};
+        TelemetryServer::GpsInfo gpsInfo{11, TelemetryServer::FixType::Fix3D};
+        TelemetryServer::Battery battery;
+
+        // Publish home already, so that it is available.
+        telemServer.publish_home(position);
 
         // Create a mission raw server
         // This will allow us to receive missions from a GCS
@@ -117,15 +127,6 @@ int main(int argc, char** argv)
         // Set current item to complete to progress the current item state
         missionRawServer.set_current_item_complete();
 
-        // Create vehicle telemetry info
-        TelemetryServer::Position position{55.953251, -3.188267, 0, 0};
-        TelemetryServer::PositionVelocityNed positionVelocityNed{{0, 0, 0}, {0, 0, 0}};
-        TelemetryServer::VelocityNed velocity{};
-        TelemetryServer::Heading heading{60};
-        TelemetryServer::RawGps rawGps{
-            0, 55.953251, -3.188267, 0, NAN, NAN, 0, NAN, 0, 0, 0, 0, 0, 0};
-        TelemetryServer::GpsInfo gpsInfo{11, TelemetryServer::FixType::Fix3D};
-
         // As we're acting as an autopilot, lets just make the vehicle jump to 10m altitude on
         // successful takeoff
         actionServer.subscribe_takeoff([&position](ActionServer::Result result, bool takeoff) {
@@ -138,21 +139,22 @@ int main(int argc, char** argv)
             std::this_thread::sleep_for(std::chrono::seconds(1));
 
             // Publish the telemetry
-            telemServer.publish_position(position, velocity, heading);
             telemServer.publish_home(position);
+            telemServer.publish_sys_status(battery, true, true, true, true, true);
+            telemServer.publish_position(position, velocity, heading);
             telemServer.publish_position_velocity_ned(positionVelocityNed);
             telemServer.publish_raw_gps(rawGps, gpsInfo);
+
+            // Just a silly test.
+            telemServer.publish_unix_epoch_time(42);
         }
     });
 
     // Now this is the main thread, we run client plugins to act as the GCS
     // to communicate with the autopilot server plugins.
-    mavsdk::Mavsdk mavsdk;
-    mavsdk::Mavsdk::Configuration configuration(
-        mavsdk::Mavsdk::Configuration::UsageType::GroundStation);
-    mavsdk.set_configuration(configuration);
+    mavsdk::Mavsdk mavsdk{Mavsdk::Configuration{ComponentType::GroundStation}};
 
-    auto result = mavsdk.add_any_connection("udp://:14551");
+    auto result = mavsdk.add_any_connection("udpin://0.0.0.0:14551");
     if (result == mavsdk::ConnectionResult::Success) {
         std::cout << "Connected!" << std::endl;
     }
@@ -249,6 +251,11 @@ int main(int argc, char** argv)
     // Set up callback to monitor altitude while the vehicle is in flight
     telemetry.subscribe_position([](mavsdk::Telemetry::Position position) {
         std::cout << "Altitude: " << position.relative_altitude_m << " m" << std::endl;
+    });
+
+    // Set up callback to monitor Unix time
+    telemetry.subscribe_unix_epoch_time([](uint64_t time_us) {
+        std::cout << "Unix epoch time: " << time_us << " us" << std::endl;
     });
 
     // Check if vehicle is ready to arm

@@ -19,7 +19,7 @@ void usage(const std::string& bin_name)
               << " For TCP : tcp://[server_host][:server_port]\n"
               << " For UDP : udp://[bind_host][:bind_port]\n"
               << " For Serial : serial:///path/to/serial/dev[:baudrate]\n"
-              << "For example, to connect to the simulator use URL: udp://:14540\n";
+              << "For example, to connect to the simulator use URL: udpin://0.0.0.0:14540\n";
 }
 
 bool connect(Mavsdk* mavsdk, std::string connection_url)
@@ -70,7 +70,7 @@ int main(int argc, char** argv)
 
     std::unique_ptr<Mavsdk> mavsdk;
 
-    mavsdk = std::make_unique<Mavsdk>();
+    mavsdk = std::make_unique<Mavsdk>(Mavsdk::Configuration{ComponentType::GroundStation});
 
     while (true) {
         if (connect(mavsdk.get(), connection_url)) {
@@ -82,7 +82,7 @@ int main(int argc, char** argv)
         wait_for_disconnect(mavsdk.get());
 
         // Destruct and construct Mavsdk.
-        mavsdk = std::make_unique<Mavsdk>();
+        mavsdk = std::make_unique<Mavsdk>(Mavsdk::Configuration{ComponentType::GroundStation});
     }
 
     return 0;

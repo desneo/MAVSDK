@@ -5,6 +5,8 @@
 #include <functional>
 #include <vector>
 
+#include "autopilot.h"
+#include "component_type.h"
 #include "deprecated.h"
 #include "handle.h"
 
@@ -124,11 +126,6 @@ public:
     void unsubscribe_is_connected(IsConnectedHandle handle);
 
     /**
-     * @brief Component Types
-     */
-    enum class ComponentType { UNKNOWN, AUTOPILOT, CAMERA, GIMBAL };
-
-    /**
      * @brief type for component discovery callback
      */
     using ComponentDiscoveredCallback = std::function<void(ComponentType)>;
@@ -180,6 +177,13 @@ public:
      * @brief Enable time synchronization using the TIMESYNC messages.
      */
     void enable_timesync();
+
+    /**
+     * @brief Get autopilot type.
+     *
+     * @return autopilot type discovered.
+     */
+    Autopilot autopilot_type() const;
 
     /**
      * @brief Copy constructor (object is not copyable).

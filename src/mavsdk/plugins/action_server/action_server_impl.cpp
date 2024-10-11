@@ -56,8 +56,8 @@ ActionServerImpl::~ActionServerImpl()
 
 void ActionServerImpl::init()
 {
-    _server_component_impl->add_call_every(
-        [this]() { _server_component_impl->send_autopilot_version(); }, 1.0, &_send_version_cookie);
+    _send_version_cookie = _server_component_impl->add_call_every(
+        [this]() { _server_component_impl->send_autopilot_version(); }, 1.0);
 
     // Arming / Disarm / Kill
     _server_component_impl->register_mavlink_command_handler(
@@ -65,6 +65,8 @@ void ActionServerImpl::init()
         [this](const MavlinkCommandReceiver::CommandLong& command) {
             ActionServer::ArmDisarm armDisarm{
                 command.params.param1 == 1, command.params.param2 == 21196};
+
+            std::lock_guard<std::mutex> lock(_callback_mutex);
 
             // Check arm states - Ugly.
             auto request_ack = MAV_RESULT_UNSUPPORTED;
@@ -98,6 +100,8 @@ void ActionServerImpl::init()
     _server_component_impl->register_mavlink_command_handler(
         MAV_CMD_NAV_TAKEOFF,
         [this](const MavlinkCommandReceiver::CommandLong& command) {
+            std::lock_guard<std::mutex> lock(_callback_mutex);
+
             if (_allow_takeoff) {
                 _takeoff_callbacks.queue(
                     ActionServer::Result::Success, true, [this](const auto& func) {
@@ -129,6 +133,8 @@ void ActionServerImpl::init()
 
             auto custom_mode = static_cast<uint8_t>(command.params.param2);
             auto sub_custom_mode = static_cast<uint8_t>(command.params.param3);
+
+            std::lock_guard<std::mutex> lock(_callback_mutex);
 
             if (is_custom) {
                 // PX4 uses custom modes

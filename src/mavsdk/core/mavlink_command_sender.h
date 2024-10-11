@@ -1,5 +1,6 @@
 #pragma once
 
+#include "timeout_handler.h"
 #include "mavlink_include.h"
 #include "locked_queue.h"
 #include "mavsdk_time.h"
@@ -9,7 +10,6 @@
 #include <functional>
 #include <mutex>
 #include <optional>
-#include <unordered_map>
 #include <variant>
 
 namespace mavsdk {
@@ -114,7 +114,7 @@ private:
         CommandIdentification identification{};
         CommandResultCallback callback{};
         SteadyTimePoint time_started{};
-        void* timeout_cookie = nullptr;
+        TimeoutHandler::Cookie timeout_cookie{};
         double timeout_s{0.5};
         int retries_to_do{3};
         bool already_sent{false};
@@ -146,12 +146,12 @@ private:
         return identification;
     }
 
-    void receive_command_ack(mavlink_message_t message);
+    void receive_command_ack(const mavlink_message_t& message);
     void receive_timeout(const CommandIdentification& identification);
 
-    void call_callback(const CommandResultCallback& callback, Result result, float progress);
+    void call_callback(const CommandResultCallback& callback, Result result, float progress) const;
 
-    bool send_mavlink_message(const Command& command);
+    bool send_mavlink_message(const Command& command) const;
 
     float maybe_reserved(const std::optional<float>& maybe_param) const;
 

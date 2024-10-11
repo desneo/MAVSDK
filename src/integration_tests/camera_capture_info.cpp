@@ -1,5 +1,6 @@
 #include "integration_test_helper.h"
 #include "mavsdk.h"
+#include <algorithm>
 #include <iostream>
 #include <functional>
 #include <atomic>
@@ -9,9 +10,9 @@ using namespace mavsdk;
 
 TEST(CameraTest, CaptureInfo)
 {
-    Mavsdk mavsdk;
+    Mavsdk mavsdk{Mavsdk::Configuration{ComponentType::GroundStation}};
 
-    ConnectionResult ret = mavsdk.add_udp_connection();
+    ConnectionResult ret = mavsdk.add_any_connection("udpin://0.0.0.0:14540");
     ASSERT_EQ(ret, ConnectionResult::Success);
 
     // Wait for system to connect via heartbeat.

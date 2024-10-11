@@ -10,11 +10,11 @@
 
 using namespace mavsdk;
 
-TEST_F(SitlTest, OffboardPositionNED)
+TEST(SitlTest, OffboardPositionNED)
 {
-    Mavsdk mavsdk;
+    Mavsdk mavsdk{Mavsdk::Configuration{ComponentType::GroundStation}};
 
-    ConnectionResult ret = mavsdk.add_udp_connection();
+    ConnectionResult ret = mavsdk.add_any_connection("udpin://0.0.0.0:14540");
     ASSERT_EQ(ConnectionResult::Success, ret);
 
     // Wait for system to connect via heartbeat.

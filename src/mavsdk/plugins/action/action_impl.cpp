@@ -62,6 +62,16 @@ Action::Result ActionImpl::arm() const
     return fut.get();
 }
 
+Action::Result ActionImpl::arm_force() const
+{
+    auto prom = std::promise<Action::Result>();
+    auto fut = prom.get_future();
+
+    arm_force_async([&prom](Action::Result result) { prom.set_value(result); });
+
+    return fut.get();
+}
+
 Action::Result ActionImpl::disarm() const
 {
     auto prom = std::promise<Action::Result>();
@@ -285,6 +295,21 @@ bool ActionImpl::need_hold_before_arm_apm() const
     }
 }
 
+void ActionImpl::arm_force_async(const Action::ResultCallback& callback) const
+{
+    MavlinkCommandSender::CommandLong command{};
+
+    command.command = MAV_CMD_COMPONENT_ARM_DISARM;
+    command.params.maybe_param1 = 0.0f; // arm
+    command.params.maybe_param2 = 21196.f; // magic number to force
+    command.target_component_id = _system_impl->get_autopilot_id();
+
+    _system_impl->send_command_async(
+        command, [this, callback](MavlinkCommandSender::Result result, float) {
+            command_result_callback(result, callback);
+        });
+}
+
 void ActionImpl::disarm_async(const Action::ResultCallback& callback) const
 {
     MavlinkCommandSender::CommandLong command{};
@@ -407,8 +432,9 @@ void ActionImpl::takeoff_async_apm(const Action::ResultCallback& callback) const
                     if (callback) {
                         callback(action_result);
                     }
+                } else {
+                    send_takeoff_command();
                 }
-                send_takeoff_command();
             });
     } else {
         send_takeoff_command();
@@ -553,7 +579,14 @@ void ActionImpl::set_actuator_async(
                     command.params.maybe_param6 = value;
                     break;
             }
-            command.params.maybe_param7 = static_cast<float>(zero_based_index) / 6.0f;
+            command.params.maybe_param7 = static_cast<float>(zero_based_index / 6);
+        } else {
+            if (callback) {
+                _system_impl->call_user_callback([temp_callback = callback]() {
+                    temp_callback(Action::Result::InvalidArgument);
+                });
+            }
+            return;
         }
     }
 
@@ -798,6 +831,11 @@ Action::Result ActionImpl::action_result_from_command_result(MavlinkCommandSende
 void ActionImpl::command_result_callback(
     MavlinkCommandSender::Result command_result, const Action::ResultCallback& callback) const
 {
+    if (command_result == MavlinkCommandSender::Result::InProgress) {
+        // We only want to return once, so we can't call the callback on progress updates.
+        return;
+    }
+
     Action::Result action_result = action_result_from_command_result(command_result);
 
     if (callback) {

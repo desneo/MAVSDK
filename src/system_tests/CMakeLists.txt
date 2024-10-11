@@ -1,6 +1,6 @@
 add_executable(system_tests_runner
     camera_take_photo.cpp
-    component_information.cpp
+    component_metadata.cpp
     action_arm_disarm.cpp
     param_set_and_get.cpp
     param_get_all.cpp
@@ -26,12 +26,19 @@ target_include_directories(system_tests_runner
     ${PROJECT_SOURCE_DIR}/mavsdk/core
 )
 
+hunter_add_package(GTest)
+find_package(GTest REQUIRED)
+
 target_link_libraries(system_tests_runner
     PRIVATE
     mavsdk
-    gtest
-    gtest_main
-    gmock
+    GTest::gtest
+    GTest::gtest_main
+    GTest::gmock
+)
+
+set_target_properties(system_tests_runner
+    PROPERTIES COMPILE_FLAGS ${warnings}
 )
 
 if(ENABLE_CPPTRACE)

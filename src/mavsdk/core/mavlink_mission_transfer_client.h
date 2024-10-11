@@ -6,6 +6,8 @@
 #include <memory>
 #include <mutex>
 #include <vector>
+#include "autopilot.h"
+#include "autopilot_callback.h"
 #include "mavlink_address.h"
 #include "mavlink_include.h"
 #include "mavlink_message_handler.h"
@@ -110,7 +112,8 @@ public:
             ResultCallback callback,
             ProgressCallback progress_callback,
             bool debugging,
-            uint8_t target_system_id);
+            uint8_t target_system_id,
+            Autopilot autopilot);
 
         ~UploadWorkItem() override;
         void start() override;
@@ -143,10 +146,11 @@ public:
         ResultCallback _callback{nullptr};
         ProgressCallback _progress_callback{nullptr};
         std::size_t _next_sequence{0};
-        void* _cookie{nullptr};
+        TimeoutHandler::Cookie _cookie{};
         unsigned _retries_done{0};
 
         uint8_t _target_system_id;
+        Autopilot _autopilot;
     };
 
     class DownloadWorkItem : public WorkItem {
@@ -191,7 +195,7 @@ public:
         std::vector<ItemInt> _items{};
         ResultAndItemsCallback _callback{nullptr};
         ProgressCallback _progress_callback{nullptr};
-        void* _cookie{nullptr};
+        TimeoutHandler::Cookie _cookie{};
         std::size_t _next_sequence{0};
         std::size_t _expected_count{0};
         unsigned _retries_done{0};
@@ -226,7 +230,7 @@ public:
         void callback_and_reset(Result result);
 
         ResultCallback _callback{nullptr};
-        void* _cookie{nullptr};
+        TimeoutHandler::Cookie _cookie{};
         unsigned _retries_done{0};
         uint8_t _target_system_id;
     };
@@ -261,7 +265,7 @@ public:
 
         int _current{0};
         ResultCallback _callback{nullptr};
-        void* _cookie{nullptr};
+        TimeoutHandler::Cookie _cookie{};
         unsigned _retries_done{0};
         uint8_t _target_system_id;
     };
@@ -272,7 +276,8 @@ public:
         Sender& sender,
         MavlinkMessageHandler& message_handler,
         TimeoutHandler& timeout_handler,
-        TimeoutSCallback get_timeout_s_callback);
+        TimeoutSCallback get_timeout_s_callback,
+        AutopilotCallback autopilot_callback);
 
     ~MavlinkMissionTransferClient() = default;
 
@@ -307,6 +312,7 @@ private:
     MavlinkMessageHandler& _message_handler;
     TimeoutHandler& _timeout_handler;
     TimeoutSCallback _timeout_s_callback;
+    AutopilotCallback _autopilot_callback;
 
     LockedQueue<WorkItem> _work_queue{};
 

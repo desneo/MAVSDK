@@ -1,5 +1,6 @@
 #pragma once
 
+#include "autopilot_callback.h"
 #include "log.h"
 #include "mavlink_include.h"
 #include "timeout_s_callback.h"
@@ -8,6 +9,7 @@
 #include "mavlink_parameter_subscription.h"
 #include "mavlink_parameter_cache.h"
 #include "mavlink_parameter_helper.h"
+#include "timeout_handler.h"
 
 #include <array>
 #include <cstddef>
@@ -24,7 +26,6 @@ namespace mavsdk {
 
 class Sender;
 class MavlinkMessageHandler;
-class TimeoutHandler;
 
 class MavlinkParameterClient : public MavlinkParameterSubscription {
 public:
@@ -34,6 +35,7 @@ public:
         MavlinkMessageHandler& message_handler,
         TimeoutHandler& timeout_handler,
         TimeoutSCallback timeout_s_callback,
+        AutopilotCallback autopilot_callback,
         uint8_t target_system_id,
         uint8_t target_component_id = MAV_COMP_ID_AUTOPILOT1,
         bool use_extended_protocol = false);
@@ -195,13 +197,14 @@ private:
     MavlinkMessageHandler& _message_handler;
     TimeoutHandler& _timeout_handler;
     TimeoutSCallback _timeout_s_callback;
+    AutopilotCallback _autopilot_callback;
     uint8_t _target_system_id = 0;
     uint8_t _target_component_id = MAV_COMP_ID_AUTOPILOT1;
     bool _use_extended = false;
 
     // These are specific depending on the work item type
     LockedQueue<WorkItem> _work_queue{};
-    void* _timeout_cookie = nullptr;
+    TimeoutHandler::Cookie _timeout_cookie{};
 
     MavlinkParameterCache _param_cache{};
 

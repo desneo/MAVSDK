@@ -1,18 +1,18 @@
 #include <chrono>
 #include <future>
 #include <iostream>
+#include <thread>
 
 #include <mavsdk/mavsdk.h>
 #include <mavsdk/plugins/camera/camera.h>
+
+static void do_camera_operation(mavsdk::Camera& camera);
 
 int main(int argc, const char* argv[])
 {
     // we run client plugins to act as the GCS
     // to communicate with the camera server plugins.
-    mavsdk::Mavsdk mavsdk;
-    mavsdk::Mavsdk::Configuration configuration(
-        mavsdk::Mavsdk::Configuration::UsageType::GroundStation);
-    mavsdk.set_configuration(configuration);
+    mavsdk::Mavsdk mavsdk{mavsdk::Mavsdk::Configuration{mavsdk::ComponentType::GroundStation}};
 
     auto result = mavsdk.add_any_connection("udp://:14030");
     if (result == mavsdk::ConnectionResult::Success) {
@@ -49,8 +49,50 @@ int main(int argc, const char* argv[])
         std::cout << info << std::endl;
     });
 
-    auto take_photo_result = camera.take_photo();
-    std::cout << "Take phto return : " << take_photo_result << std::endl;
+    camera.subscribe_status([](mavsdk::Camera::Status status) {
+        std::cout << "Camera status:" << std::endl;
+        std::cout << status << std::endl;
+    });
 
+    do_camera_operation(camera);
+
+    // for test subscribe camera status, so don't end the process
+    while (true) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
     return 0;
+}
+
+void do_camera_operation(mavsdk::Camera& camera)
+{
+    // switch to photo mode to take photo
+    auto operation_result = camera.set_mode(mavsdk::Camera::Mode::Photo);
+    std::cout << "Set camera to photo mode result : " << operation_result << std::endl;
+
+    operation_result = camera.take_photo();
+    std::cout << "Take photo result : " << operation_result << std::endl;
+
+    // switch to video mode to recording video
+    operation_result = camera.set_mode(mavsdk::Camera::Mode::Video);
+    std::cout << "Set camera to video mode result : " << operation_result << std::endl;
+
+    operation_result = camera.start_video();
+    std::cout << "Start video result : " << operation_result << std::endl;
+
+    operation_result = camera.stop_video();
+    std::cout << "Stop video result : " << operation_result << std::endl;
+
+    // the camera can have multi video stream so may need the stream id
+    operation_result = camera.start_video_streaming(2);
+    std::cout << "start video streaming result : " << operation_result << std::endl;
+
+    operation_result = camera.stop_video_streaming(2);
+    std::cout << "stop video streaming result : " << operation_result << std::endl;
+
+    // format the storage with special storage id test
+    operation_result = camera.format_storage(11);
+    std::cout << "format storage result : " << operation_result << std::endl;
+
+    operation_result = camera.reset_settings();
+    std::cout << "Reset camera settings result : " << operation_result << std::endl;
 }

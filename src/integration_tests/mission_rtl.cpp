@@ -17,24 +17,24 @@ using namespace mavsdk;
 
 void do_mission_with_rtl(float mission_altitude_m, float return_altitude_m);
 
-TEST_F(SitlTest, PX4MissionWithRTLHigh)
+TEST(SitlTest, PX4MissionWithRTLHigh)
 {
     do_mission_with_rtl(20, 30);
 }
 
-TEST_F(SitlTest, PX4MissionWithRTLLow)
+TEST(SitlTest, PX4MissionWithRTLLow)
 {
     do_mission_with_rtl(5, 10);
 }
 
-TEST_F(SitlTest, PX4MissionWithRTLHigherAnyway)
+TEST(SitlTest, PX4MissionWithRTLHigherAnyway)
 {
     do_mission_with_rtl(10, 5);
 }
 
 void do_mission_with_rtl(float mission_altitude_m, float return_altitude_m)
 {
-    Mavsdk mavsdk;
+    Mavsdk mavsdk{Mavsdk::Configuration{ComponentType::GroundStation}};
 
     {
         auto prom = std::make_shared<std::promise<void>>();
@@ -52,7 +52,7 @@ void do_mission_with_rtl(float mission_altitude_m, float return_altitude_m)
             }
         });
 
-        ConnectionResult ret = mavsdk.add_udp_connection();
+        ConnectionResult ret = mavsdk.add_any_connection("udpin://0.0.0.0:14540");
         ASSERT_EQ(ret, ConnectionResult::Success);
 
         auto status = future_result.wait_for(std::chrono::seconds(2));
