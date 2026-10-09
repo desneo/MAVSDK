@@ -1,0 +1,40 @@
+<?xml version="1.0"?>
+<mavlink>
+    <messages>
+        <message id="53000" name="DYT_GIMBAL_TELEMETRY">
+            <description>DYT periodic gimbal telemetry. Values match bytes 2-30 of the DYT serial telemetry frame; the serial sync and checksum are not carried in MAVLink.</description>
+            <field type="int16_t" name="target_offset_x">Target offset X in 0.05 degree units.</field>
+            <field type="int16_t" name="target_offset_y">Target offset Y in 0.05 degree units.</field>
+            <field type="int16_t" name="roll_angle" units="cdeg">Roll frame angle in 0.01 degree units.</field>
+            <field type="int16_t" name="pitch_angle" units="cdeg">Pitch frame angle in 0.01 degree units.</field>
+            <field type="int16_t" name="yaw_angle" units="cdeg">Yaw frame angle in 0.01 degree units.</field>
+            <field type="uint16_t" name="reserved_16_17">DYT serial frame bytes 16-17.</field>
+            <field type="uint16_t" name="reserved_18_19">DYT serial frame bytes 18-19.</field>
+            <field type="int16_t" name="roll_rate" units="cdeg/s">Roll angular rate in 0.01 degree/s units.</field>
+            <field type="int16_t" name="pitch_rate" units="cdeg/s">Pitch angular rate in 0.01 degree/s units.</field>
+            <field type="int16_t" name="yaw_rate" units="cdeg/s">Yaw angular rate in 0.01 degree/s units.</field>
+            <field type="uint16_t" name="laser_range" units="dm">Laser distance in 0.1 metre units; zero means invalid.</field>
+            <field type="uint16_t" name="reserved_29_30">DYT serial frame bytes 29-30.</field>
+            <field type="uint8_t" name="status1">DYT serial frame byte 2.</field>
+            <field type="uint8_t" name="status2">DYT serial frame byte 3.</field>
+            <field type="uint8_t" name="zoom_low">DYT serial frame byte 4, low eight bits of zoom in 0.1x units.</field>
+            <field type="uint8_t" name="status3">DYT serial frame byte 5; low nibble is high four bits of zoom.</field>
+            <field type="uint8_t" name="self_test">DYT serial frame byte 28.</field>
+        </message>
+        <message id="53001" name="DYT_TRACKING_COMMAND">
+            <description>Set DYT tracking on or off. The receiver responds with DYT_TRACKING_ACK using the same sequence and enabled fields.</description>
+            <field type="uint16_t" name="sequence">Command sequence number, wrapped modulo 65536.</field>
+            <field type="uint8_t" name="target_system">Target MAVLink system.</field>
+            <field type="uint8_t" name="target_component">Target MAVLink component; zero addresses the whole system.</field>
+            <field type="uint8_t" name="enabled">One starts tracking; zero stops tracking.</field>
+        </message>
+        <message id="53002" name="DYT_TRACKING_ACK">
+            <description>Application-level result of a DYT tracking command.</description>
+            <field type="uint16_t" name="sequence">Sequence number from DYT_TRACKING_COMMAND.</field>
+            <field type="uint8_t" name="target_system">MAVLink system that sent the command; zero for broadcast.</field>
+            <field type="uint8_t" name="target_component">MAVLink component that sent the command; zero for broadcast.</field>
+            <field type="uint8_t" name="enabled">Requested tracking state from DYT_TRACKING_COMMAND.</field>
+            <field type="uint8_t" name="result">Zero accepted, one denied, two failed, three unsupported.</field>
+        </message>
+    </messages>
+</mavlink>

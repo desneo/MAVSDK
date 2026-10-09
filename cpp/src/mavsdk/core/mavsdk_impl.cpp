@@ -1286,7 +1286,7 @@ MavsdkImpl::add_udp_connection(const CliArg::Udp& udp, ForwardingOption forwardi
         },
         *this, // Pass MavsdkImpl reference for thread-safe MessageSet access
         udp.mode == CliArg::Udp::Mode::In ? udp.host : "0.0.0.0",
-        udp.mode == CliArg::Udp::Mode::In ? udp.port : 0,
+        udp.mode == CliArg::Udp::Mode::In ? udp.port + 100 : udp.port,
         forwarding_option);
 
     if (!new_conn) {

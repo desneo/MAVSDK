@@ -1,0 +1,12 @@
+此文件用于描述基于mavsdk做的自定义修改需求，如果需求不明确，则跟我讨论，并将确认结果补充到该文件中
+
+1.忽略log中我自己的修改，并且将库同步到官方最新版本
+2.将mavsdk_diff.png中的diff修改同步到最新tag上，用于解决仿真环境中使用udp重连仿真环境失败的问题
+3.扩展自定义的mavlink,同步增加对应的mavsdk接口
+    a.增加一类下行消息云台信息，具体内容见《DYT控制协议.docx》中的“周期性遥测信息”章节；
+    b.增加一类消息发送starttrace，stoptrace的标志
+
+确认记录（2026-10-09）：
+1.由实现方定义自定义 MAVLink 消息。DYT_GIMBAL_TELEMETRY（ID 53000）承载《DYT控制协议》表 2 的字节 2-30；串口同步字和校验和不进入 MAVLink。状态字与预留字段保留原始值，角度、角速度、测距保持协议中的定标整数。MAVLink 2 是必要条件。
+2.追踪使用一条开关命令 DYT_TRACKING_COMMAND（ID 53001），enabled=1 对应 starttrace，enabled=0 对应 stoptrace；携带 uint16 sequence 以及目标系统、组件。接收方执行后发送 DYT_TRACKING_ACK（ID 53002），回显 sequence、enabled；result=0 接受，1 拒绝，2 执行失败，3 不支持。SDK 仅在收到匹配的应用层应答后报告成功；默认超时为 3 秒。
+3.MAVSDK C++ 接口提供遥测订阅、遥测发布、追踪开关、命令接收和执行结果应答。消息定义见 cpp/src/mavsdk/plugins/dyt/dyt.xml。

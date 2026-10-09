@@ -1,0 +1,5 @@
+#pragma once
+
+namespace mavsdk {
+inline constexpr const char* dyt_xml = R"DYT(@DYT_XML_CONTENT@)DYT";
+}
