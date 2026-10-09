@@ -4,7 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <fstream>
-#include <iterator>
+#include <sstream>
 #include <string>
 
 namespace mavsdk {
@@ -14,7 +14,9 @@ TEST(Dyt, XmlDefinesAllMessages)
 {
     std::ifstream file("src/mavsdk/plugins/dyt/dyt.xml");
     ASSERT_TRUE(file.good());
-    const std::string xml{std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{}};
+    std::ostringstream xml_stream;
+    xml_stream << file.rdbuf();
+    const std::string xml = xml_stream.str();
 
     mav::MessageSet definitions;
     ASSERT_EQ(definitions.addFromXMLString(xml, false), mav::MessageSetResult::Success);
